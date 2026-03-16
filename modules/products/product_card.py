@@ -9,6 +9,7 @@ class ProductCard(QWidget):
         super().__init__()
 
         self.setObjectName("productCard")
+        self.setAttribute(Qt.WA_StyledBackground, True)  # IMPORTANT
         self.setFixedSize(260, 300)
 
         layout = QVBoxLayout()
@@ -44,16 +45,11 @@ class ProductCard(QWidget):
 
         self.setLayout(layout)
 
-        # Card Style
         self.setStyleSheet("""
         #productCard {
-            background-color: blue;
-            border: 1px solid #dcdcdc;
+            background-color: white;
+            border: 2px solid black;
             border-radius: 12px;
-        }
-
-        #productCard:hover {
-            border: 1px solid #2ecc71;
         }
 
         QLabel {
