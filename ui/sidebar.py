@@ -12,28 +12,26 @@ class Sidebar(QWidget):
         self.setObjectName("Sidebar")
         self.setFixedWidth(220)
 
-        # IMPORTANT: allows stylesheet background to render
         self.setAttribute(Qt.WA_StyledBackground, True)
 
         self.setStyleSheet("""
 #Sidebar {
-    background-color: #8bbfb3;
-    border: 2px solid #08a680;
+    background-color: #1f2933;
 }
 
 #Sidebar QPushButton {
-    color:#0d47a1;
-    background:transparent;
-    border:none;
-    padding:18px;
-    text-align:left;
-    font-size:16px;
-    font-weight:bold;
+    color: #e5e7eb;
+    background: transparent;
+    border: none;
+    padding: 16px 20px;
+    text-align: left;
+    font-size: 15px;
+    font-weight: 500;
 }
 
 #Sidebar QPushButton:hover {
-    background-color:#1b5e20;
-    color:white;
+    background-color: #2d3748;
+    color: #22c55e;
 }
 """)
 

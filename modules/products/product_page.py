@@ -13,10 +13,22 @@ class ProductPage(QWidget):
     def __init__(self):
         super().__init__()
 
+        # Set object name for stylesheet
+        self.setObjectName("productPage")
+
+        # Background image
+        self.setStyleSheet("""
+        #productPage {
+            background-image: url(images/dss.jpg);
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+        """)
+
         main_layout = QVBoxLayout()
 
         title = QLabel("Products")
-        title.setStyleSheet("font-size:24px;")
+        title.setStyleSheet("font-size:24px; font-weight:bold;")
 
         add_btn = QPushButton("Add Product")
         add_btn.clicked.connect(self.open_add_product)
@@ -25,8 +37,24 @@ class ProductPage(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
 
+        # Make scroll area transparent
+        self.scroll.setStyleSheet("""
+        QScrollArea {
+            background: transparent;
+            border: none;
+        }
+        QScrollArea > QWidget > QWidget {
+            background: transparent;
+        }
+        """)
+
+        # Container widget
         self.container = QWidget()
+        self.container.setStyleSheet("background: transparent;")
+
+        # Grid layout for product cards
         self.grid = QGridLayout()
+        self.grid.setSpacing(15)
 
         self.container.setLayout(self.grid)
         self.scroll.setWidget(self.container)

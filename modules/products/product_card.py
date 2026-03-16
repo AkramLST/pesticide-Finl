@@ -10,8 +10,7 @@ class ProductCard(QWidget):
 
         self.setObjectName("productCard")
         self.setAttribute(Qt.WA_StyledBackground, True)  # IMPORTANT
-        self.setFixedSize(260, 300)
-
+        self.setFixedSize(340, 300) 
         layout = QVBoxLayout()
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(6)

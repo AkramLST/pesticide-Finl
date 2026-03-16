@@ -32,7 +32,7 @@ class DashboardWindow(QMainWindow):
 
         # main area
         main_area = QHBoxLayout()
-
+        main_area.setContentsMargins(0,0,0,0)
         self.sidebar = Sidebar()
         main_area.addWidget(self.sidebar)
 
