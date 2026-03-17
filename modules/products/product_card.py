@@ -79,42 +79,43 @@ class ProductCard(QWidget):
             background: transparent;
         }
         """)
-def delete_product(self):
-    msg_box = QMessageBox(self)
-    msg_box.setWindowTitle("Confirm Delete")
-    msg_box.setText("Are you sure you want to delete this product?")
-    msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
 
-    # Force light styling
-    msg_box.setStyleSheet("""
-        QMessageBox {
-            background-color: white;
-        }
-        QLabel {
-            color: black;
-            font-size: 14px;
-        }
-        QPushButton {
-            background-color: #4CAF50;
-            color: white;
-            padding: 6px 12px;
-            border-radius: 6px;
-        }
-        QPushButton:hover {
-            background-color: #45a049;
-        }
-    """)
+    def delete_product(self):
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Confirm Delete")
+        msg_box.setText("Are you sure you want to delete this product?")
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
 
-    result = msg_box.exec()
+        # Force light styling
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: white;
+            }
+            QLabel {
+                color: black;
+                font-size: 14px;
+            }
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                padding: 6px 12px;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
 
-    if result == QMessageBox.Yes:
-        try:
-            delete_product(self.product[0])
-            QMessageBox.information(self, "Deleted", "Product deleted successfully")
+        result = msg_box.exec()
 
-            if self.refresh_callback:
-                self.refresh_callback()
+        if result == QMessageBox.Yes:
+            try:
+                delete_product(self.product[0])
+                QMessageBox.information(self, "Deleted", "Product deleted successfully")
 
-        except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
+                if self.refresh_callback:
+                    self.refresh_callback()
+
+            except Exception as e:
+                QMessageBox.critical(self, "Error", str(e))
 
