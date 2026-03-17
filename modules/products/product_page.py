@@ -80,7 +80,7 @@ class ProductPage(QWidget):
         col = 0
 
         for product in products:
-            card = ProductCard(product)
+            card = ProductCard(product, self.load_products)
             self.grid.addWidget(card, row, col)
 
             col += 1
