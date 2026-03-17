@@ -1,12 +1,13 @@
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLayout, QMessageBox
+from PySide6.QtWidgets import (
+    QWidget, QLabel, QVBoxLayout, QPushButton,
+    QHBoxLayout, QMessageBox
+)
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt
-
 from database.db import delete_product
 
 
 class ProductCard(QWidget):
-
     def __init__(self, product, refresh_callback=None):
         super().__init__()
 
@@ -21,12 +22,14 @@ class ProductCard(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(6)
 
+        # ======================
         # Image
+        # ======================
         image_label = QLabel()
         image_label.setFixedHeight(150)
         image_label.setAlignment(Qt.AlignCenter)
 
-        if product[9]:  # updated index
+        if product[9]:  # image path
             pixmap = QPixmap(product[9])
             image_label.setPixmap(
                 pixmap.scaled(200, 140, Qt.KeepAspectRatio, Qt.SmoothTransformation)
@@ -34,7 +37,9 @@ class ProductCard(QWidget):
         else:
             image_label.setText("No Image")
 
+        # ======================
         # Info
+        # ======================
         name = QLabel(product[1])
         name.setStyleSheet("font-size:16px; font-weight:bold;")
 
@@ -43,7 +48,9 @@ class ProductCard(QWidget):
         formulation = QLabel(f"Formulation: {product[5]}")
         price = QLabel(f"Price: Rs {product[6]}")
 
+        # ======================
         # Buttons
+        # ======================
         btn_layout = QHBoxLayout()
 
         edit_btn = QPushButton("Edit")
@@ -56,7 +63,9 @@ class ProductCard(QWidget):
         btn_layout.addWidget(edit_btn)
         btn_layout.addWidget(delete_btn)
 
+        # ======================
         # Add to layout
+        # ======================
         layout.addWidget(image_label)
         layout.addWidget(name)
         layout.addWidget(brand)
@@ -68,6 +77,9 @@ class ProductCard(QWidget):
 
         self.setLayout(layout)
 
+        # ======================
+        # Styling
+        # ======================
         self.setStyleSheet("""
         #productCard {
             background-color: white;
@@ -80,13 +92,16 @@ class ProductCard(QWidget):
         }
         """)
 
+    # ======================
+    # Delete Function
+    # ======================
     def delete_product(self):
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle("Confirm Delete")
         msg_box.setText("Are you sure you want to delete this product?")
         msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
 
-        # Force light styling
+        # Styled dialog
         msg_box.setStyleSheet("""
             QMessageBox {
                 background-color: white;
@@ -111,11 +126,15 @@ class ProductCard(QWidget):
         if result == QMessageBox.Yes:
             try:
                 delete_product(self.product[0])
-                QMessageBox.information(self, "Deleted", "Product deleted successfully")
+
+                QMessageBox.information(
+                    self,
+                    "Deleted",
+                    "Product deleted successfully"
+                )
 
                 if self.refresh_callback:
                     self.refresh_callback()
 
             except Exception as e:
                 QMessageBox.critical(self, "Error", str(e))
-
