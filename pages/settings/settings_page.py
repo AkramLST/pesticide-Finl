@@ -11,6 +11,7 @@ from models.settings_model import get_all_settings, set_setting
 from models.user_model import update_password, update_user
 from utils.session import session
 from utils.config import DB_PATH, BACKUPS_DIR
+from utils.theme import apply_theme, current_theme
 
 _FS = ("QLineEdit,QTextEdit{border:1.5px solid #e2e8f0;border-radius:7px;"
        "padding:8px 10px;font-size:13px;background:white;min-height:34px;}"
@@ -211,6 +212,25 @@ class SettingsPage(QWidget):
         bk_layout.addLayout(bk_row)
         body_layout.addWidget(bk_card)
 
+        # ── Theme toggle card
+        th_card = self._card()
+        th_layout = QVBoxLayout(th_card)
+        th_layout.setSpacing(14)
+        th_layout.addWidget(_section_header("🎨  Appearance"))
+        th_row = QHBoxLayout()
+        self.light_btn = QPushButton("☀️  Light Mode")
+        self.dark_btn  = QPushButton("🌙  Dark Mode")
+        for btn in (self.light_btn, self.dark_btn):
+            btn.setFixedHeight(38)
+            btn.setFixedWidth(160)
+        self.light_btn.clicked.connect(lambda: self._set_theme("light"))
+        self.dark_btn.clicked.connect(lambda: self._set_theme("dark"))
+        th_row.addWidget(self.light_btn)
+        th_row.addWidget(self.dark_btn)
+        th_row.addStretch()
+        th_layout.addLayout(th_row)
+        body_layout.addWidget(th_card)
+
         # ── Notification preferences card
         np_card = self._card()
         np_layout = QVBoxLayout(np_card)
@@ -303,7 +323,21 @@ class SettingsPage(QWidget):
         self.notif_stock_cb.setChecked(s.get("notif_stock", "1") == "1")
         self.notif_expiry_cb.setChecked(s.get("notif_expiry", "1") == "1")
         self.notif_payment_cb.setChecked(s.get("notif_payment", "1") == "1")
+        self._refresh_theme_btns()
         self._load_log()
+
+    def _set_theme(self, theme: str):
+        apply_theme(theme)
+        self._refresh_theme_btns()
+
+    def _refresh_theme_btns(self):
+        t = current_theme()
+        active  = ("QPushButton{background:#2e7d32;color:white;border-radius:8px;"
+                   "padding:9px 22px;font-size:13px;font-weight:700;border:none;}"
+                   "QPushButton:hover{background:#1b5e20;}")
+        inactive = _GRAY
+        self.light_btn.setStyleSheet(active  if t == "light" else inactive)
+        self.dark_btn.setStyleSheet( active  if t == "dark"  else inactive)
 
     def _load_log(self):
         from database.connection import get_connection

@@ -1,0 +1,210 @@
+/* ============================================================
+   Jadeed Zarai Markaz — Dark Theme
+   Primary: #4ade80  Background: #0f172a  Surface: #1e293b
+   ============================================================ */
+
+QMainWindow, QWidget {
+    background-color: #0f172a;
+    color: #e2e8f0;
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 13px;
+}
+
+/* ── Frames / Cards ── */
+QFrame {
+    background-color: #1e293b;
+    color: #e2e8f0;
+}
+
+/* ── Labels ── */
+QLabel {
+    color: #e2e8f0;
+    background: transparent;
+}
+
+/* ── Line Edit / Text Edit ── */
+QLineEdit, QTextEdit, QPlainTextEdit {
+    background: #1e293b;
+    color: #e2e8f0;
+    border: 1.5px solid #334155;
+    border-radius: 7px;
+    padding: 8px 10px;
+    font-size: 13px;
+    selection-background-color: #4ade80;
+    selection-color: #0f172a;
+}
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
+    border-color: #4ade80;
+}
+
+/* ── Combo Box ── */
+QComboBox {
+    background: #1e293b;
+    color: #e2e8f0;
+    border: 1.5px solid #334155;
+    border-radius: 7px;
+    padding: 7px 10px;
+    font-size: 13px;
+}
+QComboBox:focus { border-color: #4ade80; }
+QComboBox::drop-down { border: none; }
+QComboBox QAbstractItemView {
+    background: #1e293b;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    selection-background-color: #166534;
+    selection-color: #d1fae5;
+    outline: none;
+}
+
+/* ── Buttons ── */
+QPushButton {
+    background: #1e293b;
+    color: #e2e8f0;
+    border: 1.5px solid #334155;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+}
+QPushButton:hover { background: #334155; color: #4ade80; }
+QPushButton:pressed { background: #0f172a; }
+
+/* ── Table Widget ── */
+QTableWidget {
+    background: #1e293b;
+    alternate-background-color: #1a2744;
+    color: #e2e8f0;
+    border: none;
+    gridline-color: #334155;
+}
+QTableWidget::item {
+    color: #e2e8f0;
+    border-bottom: 1px solid #334155;
+    padding: 8px;
+}
+QTableWidget::item:selected {
+    background: #166534;
+    color: #d1fae5;
+}
+QHeaderView::section {
+    background: #0f172a;
+    color: #94a3b8;
+    font-weight: 700;
+    font-size: 12px;
+    padding: 10px 8px;
+    border: none;
+    border-right: 1px solid #334155;
+}
+
+/* ── Scroll Bars ── */
+QScrollBar:vertical {
+    background: #0f172a;
+    width: 8px;
+    border-radius: 4px;
+}
+QScrollBar::handle:vertical {
+    background: #334155;
+    border-radius: 4px;
+    min-height: 30px;
+}
+QScrollBar::handle:vertical:hover { background: #4ade80; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+
+QScrollBar:horizontal {
+    background: #0f172a;
+    height: 8px;
+    border-radius: 4px;
+}
+QScrollBar::handle:horizontal {
+    background: #334155;
+    border-radius: 4px;
+    min-width: 30px;
+}
+QScrollBar::handle:horizontal:hover { background: #4ade80; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+
+/* ── Tab Widget ── */
+QTabWidget::pane { border: none; background: #0f172a; }
+QTabBar::tab {
+    background: #0f172a;
+    color: #64748b;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    border-bottom: 3px solid transparent;
+}
+QTabBar::tab:selected {
+    color: #4ade80;
+    border-bottom: 3px solid #4ade80;
+    background: #1e293b;
+}
+QTabBar::tab:hover { background: #1e293b; }
+
+/* ── Scroll Area ── */
+QScrollArea { background: #0f172a; border: none; }
+
+/* ── Check Box ── */
+QCheckBox {
+    color: #e2e8f0;
+    font-size: 13px;
+}
+QCheckBox::indicator {
+    width: 16px; height: 16px;
+    border: 1.5px solid #334155;
+    border-radius: 4px;
+    background: #1e293b;
+}
+QCheckBox::indicator:checked {
+    background: #4ade80;
+    border-color: #4ade80;
+}
+
+/* ── Spin Box / Date Edit ── */
+QSpinBox, QDoubleSpinBox, QDateEdit {
+    background: #1e293b;
+    color: #e2e8f0;
+    border: 1.5px solid #334155;
+    border-radius: 7px;
+    padding: 7px 10px;
+    font-size: 13px;
+}
+QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus {
+    border-color: #4ade80;
+}
+
+/* ── Message Box ── */
+QMessageBox { background: #1e293b; }
+QMessageBox QLabel { color: #e2e8f0; }
+QMessageBox QPushButton {
+    background: #166534;
+    color: #d1fae5;
+    border-radius: 7px;
+    padding: 7px 18px;
+    font-weight: 700;
+    border: none;
+    min-width: 80px;
+}
+QMessageBox QPushButton:hover { background: #14532d; }
+
+/* ── Dialog ── */
+QDialog { background: #1e293b; }
+
+/* ── Tool Tips ── */
+QToolTip {
+    background: #0f172a;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+}
+
+/* ── Sidebar override ── */
+#Sidebar { background-color: #020617; }
+
+/* ── TopBar override ── */
+#TopBar, QMainWindow > QWidget > QFrame[topbar="true"] {
+    background: #1e293b;
+    border-bottom: 1.5px solid #334155;
+}
