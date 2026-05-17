@@ -1,0 +1,29 @@
+2026-05-17 15:58:27  [INFO    ]  database.migrations — Seeded user: khudada
+2026-05-17 15:58:27  [INFO    ]  database.migrations — Seeded user: hamza
+2026-05-17 15:58:27  [INFO    ]  database.migrations — Seeded user: waseem
+2026-05-17 15:58:27  [INFO    ]  database.migrations — Database migrations complete.
+2026-05-17 15:58:34  [INFO    ]  database.migrations — Database migrations complete.
+2026-05-17 15:59:15  [INFO    ]  pages.login_page — Login: hamza
+2026-05-17 16:03:14  [WARNING ]  pages.login_page — Failed login attempt: hamza
+2026-05-17 16:03:47  [INFO    ]  pages.login_page — Login: hamza
+2026-05-17 16:06:12  [INFO    ]  database.migrations — Database migrations complete.
+2026-05-17 16:06:27  [INFO    ]  pages.login_page — Login: hamza
+2026-05-17 16:07:30  [INFO    ]  database.migrations — Database migrations complete.
+2026-05-17 16:07:37  [INFO    ]  pages.login_page — Login: hamza
+2026-05-17 16:08:44  [INFO    ]  database.migrations — Added column products.purchase_price
+2026-05-17 16:08:44  [INFO    ]  database.migrations — Added column products.sale_price
+2026-05-17 16:08:44  [INFO    ]  database.migrations — Added column products.unit_type
+2026-05-17 16:08:44  [INFO    ]  database.migrations — Added column products.supplier_id
+2026-05-17 16:08:44  [INFO    ]  database.migrations — Added column products.manufacturing_date
+2026-05-17 16:08:44  [INFO    ]  database.migrations — Added column products.expiry_date
+2026-05-17 16:08:44  [INFO    ]  database.migrations — Added column products.low_stock_threshold
+2026-05-17 16:08:44  [INFO    ]  database.migrations — Added column products.barcode
+2026-05-17 16:08:44  [INFO    ]  database.migrations — Added column products.is_active
+2026-05-17 16:09:25  [INFO    ]  database.migrations — Added column products.created_at
+2026-05-17 16:09:25  [INFO    ]  database.migrations — Added column products.updated_at
+2026-05-17 16:09:25  [INFO    ]  database.migrations — Database migrations complete.
+2026-05-17 16:09:39  [INFO    ]  database.migrations — Database migrations complete.
+2026-05-17 16:09:47  [INFO    ]  pages.login_page — Login: hamza
+2026-05-17 16:14:53  [INFO    ]  database.migrations — Database migrations complete.
+2026-05-17 16:15:17  [INFO    ]  database.migrations — Database migrations complete.
+2026-05-17 16:16:15  [INFO    ]  pages.login_page — Login: hamza

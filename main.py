@@ -1,9 +1,9 @@
 import sys
 from PySide6.QtWidgets import QApplication
-from ui.login_window import LoginWindow
-from database.db import create_tables
+from database.migrations import run_migrations
+from pages.login_page import LoginWindow
 
-create_tables()
+run_migrations()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
