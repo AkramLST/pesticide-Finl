@@ -72,6 +72,7 @@ class MainWindow(QMainWindow):
         self._fade_anim = QPropertyAnimation(self._opacity_effect, b"opacity")
         self._fade_anim.setDuration(180)
         self._fade_anim.setEasingCurve(QEasingCurve.InOutQuad)
+        self._fade_connected = False
 
         main_area.addWidget(self.pages)
         main_layout.addLayout(main_area)
@@ -85,16 +86,25 @@ class MainWindow(QMainWindow):
             return
         # Fade out → switch → fade in
         self._fade_anim.stop()
+        if self._fade_connected:
+            try:
+                self._fade_anim.finished.disconnect()
+            except RuntimeError:
+                pass
+            self._fade_connected = False
         self._fade_anim.setStartValue(1.0)
         self._fade_anim.setEndValue(0.0)
-        self._fade_anim.finished.disconnect() if self._fade_anim.receivers(
-            self._fade_anim.finished) else None
         self._fade_anim.finished.connect(lambda: self._finish_switch(idx))
+        self._fade_connected = True
         self._fade_anim.start()
 
     def _finish_switch(self, idx: int):
         self.pages.setCurrentIndex(idx)
-        self._fade_anim.finished.disconnect()
+        try:
+            self._fade_anim.finished.disconnect()
+        except RuntimeError:
+            pass
+        self._fade_connected = False
         self._fade_anim.setStartValue(0.0)
         self._fade_anim.setEndValue(1.0)
         self._fade_anim.start()

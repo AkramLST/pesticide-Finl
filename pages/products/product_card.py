@@ -7,6 +7,8 @@ from PySide6.QtCore import Qt
 
 from models.product_model import delete_product
 from utils.helpers import format_currency, is_expired, is_expiring_soon
+from pages.products.edit_product_dialog import EditProductDialog
+from pages.products.sell_product_dialog import SellProductDialog
 
 
 class ProductCard(QWidget):
@@ -124,29 +126,51 @@ class ProductCard(QWidget):
 
         # ── Action buttons
         btn_row = QHBoxLayout()
-        btn_row.setContentsMargins(14, 0, 14, 12)
-        btn_row.setSpacing(8)
+        btn_row.setContentsMargins(10, 0, 10, 12)
+        btn_row.setSpacing(6)
+
+        sell_btn = QPushButton("🛒 Sell")
+        sell_btn.setFixedHeight(30)
+        sell_btn.setStyleSheet("""
+            QPushButton { background:#d1fae5; color:#065f46; border:1px solid #6ee7b7;
+                          border-radius:7px; font-size:11px; font-weight:700; }
+            QPushButton:hover { background:#a7f3d0; }
+        """)
+        sell_btn.clicked.connect(self._sell)
 
         edit_btn = QPushButton("✏ Edit")
-        edit_btn.setFixedHeight(32)
+        edit_btn.setFixedHeight(30)
         edit_btn.setStyleSheet("""
             QPushButton { background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;
-                          border-radius:7px; font-size:12px; font-weight:600; }
+                          border-radius:7px; font-size:11px; font-weight:600; }
             QPushButton:hover { background:#dbeafe; }
         """)
+        edit_btn.clicked.connect(self._edit)
 
-        del_btn = QPushButton("🗑 Delete")
-        del_btn.setFixedHeight(32)
+        del_btn = QPushButton("🗑")
+        del_btn.setFixedSize(30, 30)
         del_btn.setStyleSheet("""
             QPushButton { background:#fef2f2; color:#dc2626; border:1px solid #fecaca;
-                          border-radius:7px; font-size:12px; font-weight:600; }
+                          border-radius:7px; font-size:13px; }
             QPushButton:hover { background:#fee2e2; }
         """)
         del_btn.clicked.connect(self._delete)
 
+        btn_row.addWidget(sell_btn)
         btn_row.addWidget(edit_btn)
         btn_row.addWidget(del_btn)
         root.addLayout(btn_row)
+
+    def _sell(self):
+        dialog = SellProductDialog(self.product)
+        dialog.sale_completed.connect(self.refresh_callback or (lambda: None))
+        dialog.exec()
+
+    def _edit(self):
+        dialog = EditProductDialog(self.product)
+        if dialog.exec():
+            if self.refresh_callback:
+                self.refresh_callback()
 
     def _delete(self):
         reply = QMessageBox.question(

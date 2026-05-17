@@ -463,9 +463,14 @@ class DashboardPage(QWidget):
         }
 
     def _refresh(self):
-        layout = self.layout()
-        while layout.count():
-            item = layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        old_layout = self.layout()
+        if old_layout:
+            while old_layout.count():
+                item = old_layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            # Replace the layout
+            from PySide6.QtWidgets import QWidget as _W
+            tmp = _W()
+            tmp.setLayout(old_layout)
         self._build_ui()
