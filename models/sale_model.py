@@ -89,6 +89,37 @@ def get_weekly_sales():
     return [dict(r) for r in rows]
 
 
+def get_top_products(limit: int = 5) -> list:
+    """Return top-selling products by quantity sold."""
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT p.name, COALESCE(SUM(si.quantity), 0) as total_sold
+        FROM sale_items si
+        JOIN products p ON si.product_id = p.id
+        GROUP BY si.product_id
+        ORDER BY total_sold DESC
+        LIMIT ?
+    """, (limit,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_pending_sales() -> list:
+    """Return sales with remaining_amount > 0."""
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT s.invoice_number, c.name as customer_name,
+               s.remaining_amount, s.sale_date
+        FROM sales s
+        LEFT JOIN customers c ON s.customer_id = c.id
+        WHERE s.is_deleted=0 AND s.remaining_amount > 0
+        ORDER BY s.sale_date DESC
+        LIMIT 10
+    """).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def get_settings_value(key: str) -> str:
     conn = get_connection()
     row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()

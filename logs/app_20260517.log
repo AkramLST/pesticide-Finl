@@ -27,3 +27,10 @@
 2026-05-17 16:14:53  [INFO    ]  database.migrations — Database migrations complete.
 2026-05-17 16:15:17  [INFO    ]  database.migrations — Database migrations complete.
 2026-05-17 16:16:15  [INFO    ]  pages.login_page — Login: hamza
+2026-05-17 16:25:47  [INFO    ]  database.migrations — Database migrations complete.
+2026-05-17 16:25:52  [DEBUG   ]  matplotlib — matplotlib data path: C:\Users\haide\AppData\Local\Programs\Python\Python312\Lib\site-packages\matplotlib\mpl-data
+2026-05-17 16:25:52  [DEBUG   ]  matplotlib — CONFIGDIR=C:\Users\haide\.matplotlib
+2026-05-17 16:25:52  [DEBUG   ]  matplotlib — interactive is False
+2026-05-17 16:25:52  [DEBUG   ]  matplotlib — platform is win32
+2026-05-17 16:25:53  [DEBUG   ]  matplotlib — CACHEDIR=C:\Users\haide\.matplotlib
+2026-05-17 16:25:53  [DEBUG   ]  matplotlib.font_manager — Using fontManager instance from C:\Users\haide\.matplotlib\fontlist-v330.json

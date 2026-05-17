@@ -1,6 +1,8 @@
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QStackedWidget, QMessageBox
+    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
+    QStackedWidget, QMessageBox, QApplication, QGraphicsOpacityEffect
 )
+from PySide6.QtCore import QPropertyAnimation, QEasingCurve
 
 from widgets.sidebar import Sidebar
 from widgets.topbar import TopBar
@@ -64,6 +66,13 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(UsersPage())
         self.pages.addWidget(SettingsPage())
 
+        # Attach fade effect to the stacked widget content area
+        self._opacity_effect = QGraphicsOpacityEffect(self.pages)
+        self.pages.setGraphicsEffect(self._opacity_effect)
+        self._fade_anim = QPropertyAnimation(self._opacity_effect, b"opacity")
+        self._fade_anim.setDuration(180)
+        self._fade_anim.setEasingCurve(QEasingCurve.InOutQuad)
+
         main_area.addWidget(self.pages)
         main_layout.addLayout(main_area)
         main_widget.setLayout(main_layout)
@@ -71,7 +80,24 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentIndex(0)
 
     def _change_page(self, key: str):
-        self.pages.setCurrentIndex(PAGE_INDEX.get(key, 0))
+        idx = PAGE_INDEX.get(key, 0)
+        if idx == self.pages.currentIndex():
+            return
+        # Fade out → switch → fade in
+        self._fade_anim.stop()
+        self._fade_anim.setStartValue(1.0)
+        self._fade_anim.setEndValue(0.0)
+        self._fade_anim.finished.disconnect() if self._fade_anim.receivers(
+            self._fade_anim.finished) else None
+        self._fade_anim.finished.connect(lambda: self._finish_switch(idx))
+        self._fade_anim.start()
+
+    def _finish_switch(self, idx: int):
+        self.pages.setCurrentIndex(idx)
+        self._fade_anim.finished.disconnect()
+        self._fade_anim.setStartValue(0.0)
+        self._fade_anim.setEndValue(1.0)
+        self._fade_anim.start()
 
     def _logout(self):
         reply = QMessageBox.question(
@@ -81,7 +107,6 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.Yes:
             session.logout()
             from pages.login_page import LoginWindow
-            from PySide6.QtWidgets import QApplication
             # Store on QApplication so LoginWindow survives MainWindow closing
             app = QApplication.instance()
             app._login_window = LoginWindow()
