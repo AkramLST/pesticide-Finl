@@ -31,8 +31,13 @@ def format_datetime(dt) -> str:
 
 
 def generate_invoice_number() -> str:
-    """Generate a time-based invoice number: INV-YYYYMMDD-HHMMSS."""
-    return f"INV-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    """Generate a time-based invoice number using the configured prefix."""
+    try:
+        from models.settings_model import get_setting
+        prefix = get_setting("invoice_prefix") or "INV"
+    except Exception:
+        prefix = "INV"
+    return f"{prefix}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
 
 def is_expiring_soon(expiry_date_str: str, days: int = 30) -> bool:
