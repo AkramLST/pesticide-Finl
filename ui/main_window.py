@@ -14,6 +14,7 @@ from pages.sales.sales_page import SalesPage
 from pages.customers.customers_page import CustomersPage
 from pages.suppliers.suppliers_page import SuppliersPage
 from pages.users.users_page import UsersPage
+from pages.reports.reports_page import ReportsPage
 from pages.settings.settings_page import SettingsPage
 
 from utils.session import session
@@ -26,7 +27,8 @@ PAGE_INDEX = {
     "customers": 4,
     "suppliers": 5,
     "users":     6,
-    "settings":  7,
+    "reports":   7,
+    "settings":  8,
 }
 
 
@@ -64,6 +66,7 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(CustomersPage())
         self.pages.addWidget(SuppliersPage())
         self.pages.addWidget(UsersPage())
+        self.pages.addWidget(ReportsPage())
         self.pages.addWidget(SettingsPage())
 
         # Attach fade effect to the stacked widget content area

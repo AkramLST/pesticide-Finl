@@ -230,6 +230,47 @@ class SettingsPage(QWidget):
         np_layout.addWidget(np_save, alignment=Qt.AlignLeft)
         body_layout.addWidget(np_card)
 
+        # ── Activity Log card
+        log_card = self._card()
+        log_layout = QVBoxLayout(log_card)
+        log_layout.setSpacing(10)
+        log_layout.addWidget(_section_header("📋  Activity Log"))
+
+        log_filter_row = QHBoxLayout()
+        self.log_search = QLineEdit()
+        self.log_search.setPlaceholderText("🔍  Filter by action or user…")
+        self.log_search.setFixedWidth(260)
+        self.log_search.setStyleSheet(_FS)
+        self.log_search.textChanged.connect(self._load_log)
+        log_refresh = QPushButton("↻  Refresh")
+        log_refresh.setStyleSheet(_GRAY)
+        log_refresh.setFixedHeight(34)
+        log_refresh.clicked.connect(self._load_log)
+        log_filter_row.addWidget(self.log_search)
+        log_filter_row.addWidget(log_refresh)
+        log_filter_row.addStretch()
+        log_layout.addLayout(log_filter_row)
+
+        from PySide6.QtWidgets import QTableWidget, QHeaderView, QAbstractItemView
+        self.log_table = QTableWidget()
+        self.log_table.setColumnCount(4)
+        self.log_table.setHorizontalHeaderLabels(["Time", "User", "Action", "Details"])
+        self.log_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.log_table.verticalHeader().setVisible(False)
+        self.log_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.log_table.setAlternatingRowColors(True)
+        self.log_table.setShowGrid(False)
+        self.log_table.setFixedHeight(260)
+        self.log_table.setStyleSheet(
+            "QTableWidget{border:none;font-size:12px;background:white;"
+            "alternate-background-color:#f8fafc;}"
+            "QHeaderView::section{background:#f1f5f9;color:#475569;"
+            "font-weight:700;font-size:11px;padding:6px;border:none;}"
+            "QTableWidget::item{padding:6px;color:#1e293b;"
+            "border-bottom:1px solid #f1f5f9;}")
+        log_layout.addWidget(self.log_table)
+        body_layout.addWidget(log_card)
+
         body_layout.addStretch()
 
     # ─────────────────────────────────────────────────────
@@ -262,6 +303,35 @@ class SettingsPage(QWidget):
         self.notif_stock_cb.setChecked(s.get("notif_stock", "1") == "1")
         self.notif_expiry_cb.setChecked(s.get("notif_expiry", "1") == "1")
         self.notif_payment_cb.setChecked(s.get("notif_payment", "1") == "1")
+        self._load_log()
+
+    def _load_log(self):
+        from database.connection import get_connection
+        from PySide6.QtWidgets import QTableWidgetItem
+        query = self.log_search.text().lower().strip()
+        conn = get_connection()
+        rows = conn.execute("""
+            SELECT al.timestamp, COALESCE(u.name, u.username, 'System') AS user_name,
+                   al.action, al.details
+            FROM activity_logs al
+            LEFT JOIN users u ON al.user_id = u.id
+            ORDER BY al.id DESC LIMIT 200
+        """).fetchall()
+        conn.close()
+        filtered = [r for r in rows if not query or
+                    query in (r["action"] or "").lower() or
+                    query in (r["user_name"] or "").lower() or
+                    query in (r["details"] or "").lower()]
+        self.log_table.setRowCount(len(filtered))
+        for row_idx, r in enumerate(filtered):
+            for col, val in enumerate([
+                r["timestamp"] or "", r["user_name"] or "—",
+                r["action"] or "", r["details"] or ""
+            ]):
+                item = QTableWidgetItem(str(val))
+                item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+                self.log_table.setItem(row_idx, col, item)
+            self.log_table.setRowHeight(row_idx, 36)
 
     def _save_shop(self):
         set_setting("shop_name",    self.shop_name_i.text().strip())

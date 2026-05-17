@@ -13,6 +13,7 @@ MENU_ITEMS = [
     ("customers", "👥", "Customers"),
     ("suppliers", "🚚", "Suppliers"),
     ("users",     "👤", "Users"),
+    ("reports",   "📊", "Reports"),
     ("settings",  "⚙",  "Settings"),
 ]
 
