@@ -257,7 +257,7 @@ class UsersPage(QWidget):
         u = self._selected()
         if not u:
             return
-        current_user = session.get_user()
+        current_user = session.user
         if current_user and current_user.get("id") == u["id"]:
             QMessageBox.warning(self, "Not Allowed", "You cannot deactivate your own account.")
             return

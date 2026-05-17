@@ -1,13 +1,16 @@
+import os, shutil
+from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QLineEdit, QTextEdit, QFormLayout,
-    QScrollArea, QMessageBox, QSizePolicy
+    QScrollArea, QMessageBox, QSizePolicy, QCheckBox, QFileDialog
 )
 from PySide6.QtCore import Qt
 
 from models.settings_model import get_all_settings, set_setting
-from models.user_model import update_password
+from models.user_model import update_password, update_user
 from utils.session import session
+from utils.config import DB_PATH, BACKUPS_DIR
 
 _FS = ("QLineEdit,QTextEdit{border:1.5px solid #e2e8f0;border-radius:7px;"
        "padding:8px 10px;font-size:13px;background:white;min-height:34px;}"
@@ -163,6 +166,70 @@ class SettingsPage(QWidget):
         pw_layout.addWidget(pw_save, alignment=Qt.AlignLeft)
         body_layout.addWidget(pw_card)
 
+        # ── Profile card
+        prof_card = self._card()
+        pf_layout = QVBoxLayout(prof_card)
+        pf_layout.setSpacing(14)
+        pf_layout.addWidget(_section_header("👤  My Profile"))
+
+        prof_form = QFormLayout()
+        prof_form.setSpacing(10)
+        prof_form.setLabelAlignment(Qt.AlignRight)
+        self.prof_name_i     = QLineEdit(); self.prof_name_i.setStyleSheet(_FS)
+        self.prof_username_i = QLineEdit(); self.prof_username_i.setStyleSheet(_FS)
+        self.prof_phone_i    = QLineEdit(); self.prof_phone_i.setStyleSheet(_FS)
+        self.prof_email_i    = QLineEdit(); self.prof_email_i.setStyleSheet(_FS)
+        prof_form.addRow("Full Name:",  self.prof_name_i)
+        prof_form.addRow("Username:",   self.prof_username_i)
+        prof_form.addRow("Phone:",       self.prof_phone_i)
+        prof_form.addRow("Email:",       self.prof_email_i)
+        pf_layout.addLayout(prof_form)
+        prof_save = QPushButton("💾  Save Profile")
+        prof_save.setFixedWidth(180)
+        prof_save.setStyleSheet(_GREEN)
+        prof_save.clicked.connect(self._save_profile)
+        pf_layout.addWidget(prof_save, alignment=Qt.AlignLeft)
+        body_layout.addWidget(prof_card)
+
+        # ── Database Backup card
+        bk_card = self._card()
+        bk_layout = QVBoxLayout(bk_card)
+        bk_layout.setSpacing(14)
+        bk_layout.addWidget(_section_header("🗄️  Database Backup & Restore"))
+        bk_row = QHBoxLayout()
+        bk_btn = QPushButton("💾  Backup Now")
+        bk_btn.setFixedHeight(36)
+        bk_btn.setStyleSheet(_GREEN)
+        bk_btn.clicked.connect(self._backup_db)
+        restore_btn = QPushButton("📂  Restore from Backup")
+        restore_btn.setFixedHeight(36)
+        restore_btn.setStyleSheet(_GRAY)
+        restore_btn.clicked.connect(self._restore_db)
+        bk_row.addWidget(bk_btn)
+        bk_row.addWidget(restore_btn)
+        bk_row.addStretch()
+        bk_layout.addLayout(bk_row)
+        body_layout.addWidget(bk_card)
+
+        # ── Notification preferences card
+        np_card = self._card()
+        np_layout = QVBoxLayout(np_card)
+        np_layout.setSpacing(10)
+        np_layout.addWidget(_section_header("🔔  Notification Preferences"))
+        _cb_style = "QCheckBox{font-size:13px;color:#1e293b;}"
+        self.notif_stock_cb   = QCheckBox("Low stock alerts")
+        self.notif_expiry_cb  = QCheckBox("Expired / expiring soon alerts")
+        self.notif_payment_cb = QCheckBox("Pending customer payment alerts")
+        for cb in (self.notif_stock_cb, self.notif_expiry_cb, self.notif_payment_cb):
+            cb.setStyleSheet(_cb_style)
+            np_layout.addWidget(cb)
+        np_save = QPushButton("💾  Save Preferences")
+        np_save.setFixedWidth(200)
+        np_save.setStyleSheet(_GREEN)
+        np_save.clicked.connect(self._save_notif_prefs)
+        np_layout.addWidget(np_save, alignment=Qt.AlignLeft)
+        body_layout.addWidget(np_card)
+
         body_layout.addStretch()
 
     # ─────────────────────────────────────────────────────
@@ -186,6 +253,15 @@ class SettingsPage(QWidget):
         self.inv_prefix_i.setText(s.get("invoice_prefix", "INV"))
         self.inv_footer_i.setPlainText(s.get("invoice_footer",
             "Thank you for your business!"))
+        u = session.user
+        if u:
+            self.prof_name_i.setText(u.get("name", ""))
+            self.prof_username_i.setText(u.get("username", ""))
+            self.prof_phone_i.setText(u.get("phone", "") or "")
+            self.prof_email_i.setText(u.get("email", "") or "")
+        self.notif_stock_cb.setChecked(s.get("notif_stock", "1") == "1")
+        self.notif_expiry_cb.setChecked(s.get("notif_expiry", "1") == "1")
+        self.notif_payment_cb.setChecked(s.get("notif_payment", "1") == "1")
 
     def _save_shop(self):
         set_setting("shop_name",    self.shop_name_i.text().strip())
@@ -199,9 +275,58 @@ class SettingsPage(QWidget):
         set_setting("invoice_footer", self.inv_footer_i.toPlainText().strip())
         QMessageBox.information(self, "Saved", "Invoice settings saved.")
 
+    def _save_profile(self):
+        user = session.user
+        if not user:
+            return
+        name     = self.prof_name_i.text().strip()
+        username = self.prof_username_i.text().strip()
+        if not name or not username:
+            QMessageBox.warning(self, "Validation", "Name and username are required.")
+            return
+        update_user(user["id"], {
+            "name":          name,
+            "username":      username,
+            "role":          user.get("role", "Staff"),
+            "phone":         self.prof_phone_i.text().strip(),
+            "email":         self.prof_email_i.text().strip(),
+            "profile_image": user.get("profile_image", ""),
+        })
+        session.user["name"]     = name
+        session.user["username"] = username
+        QMessageBox.information(self, "Saved", "Profile updated successfully.")
+
+    def _backup_db(self):
+        os.makedirs(BACKUPS_DIR, exist_ok=True)
+        ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
+        dest = os.path.join(BACKUPS_DIR, f"backup_{ts}.db")
+        shutil.copy2(DB_PATH, dest)
+        QMessageBox.information(self, "Backup Complete",
+            f"Database backed up to:\n{dest}")
+
+    def _restore_db(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Backup File", BACKUPS_DIR, "DB Files (*.db)")
+        if not path:
+            return
+        if QMessageBox.question(self, "Confirm Restore",
+                "This will REPLACE the current database and restart the app.\n"
+                "Are you sure?",
+                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            return
+        shutil.copy2(path, DB_PATH)
+        QMessageBox.information(self, "Restored",
+            "Database restored. Please restart the application.")
+
+    def _save_notif_prefs(self):
+        set_setting("notif_stock",   "1" if self.notif_stock_cb.isChecked() else "0")
+        set_setting("notif_expiry",  "1" if self.notif_expiry_cb.isChecked() else "0")
+        set_setting("notif_payment", "1" if self.notif_payment_cb.isChecked() else "0")
+        QMessageBox.information(self, "Saved", "Notification preferences saved.")
+
     def _change_password(self):
         from models.user_model import get_user_by_credentials
-        user = session.get_user()
+        user = session.user
         if not user:
             QMessageBox.warning(self, "Error", "Not logged in.")
             return

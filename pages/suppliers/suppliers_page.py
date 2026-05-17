@@ -147,6 +147,9 @@ class SuppliersPage(QWidget):
 
         act_row = QHBoxLayout()
         for label, style, slot in [
+            ("📦  View Products", "QPushButton{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;"
+             "border-radius:8px;font-size:13px;font-weight:600;padding:0 14px;}"
+             "QPushButton:hover{background:#dbeafe;}", self._view_products),
             ("✏  Edit",   _GRAY, self._edit),
             ("🗑  Delete", _RED,  self._delete),
         ]:
@@ -223,6 +226,11 @@ class SuppliersPage(QWidget):
             return None
         sid = int(self.table.item(row, COL_ID).text())
         return next((s for s in self._all if s["id"] == sid), None)
+
+    def _view_products(self):
+        s = self._selected()
+        if s:
+            SupplierProductsDialog(s).exec()
 
     def _add(self):
         if SupplierDialog().exec():
@@ -327,3 +335,62 @@ class SupplierDialog(QDialog):
             self.accept()
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
+
+
+# ─── Supplier Products Dialog ─────────────────────────────────────────────────
+class SupplierProductsDialog(QDialog):
+
+    def __init__(self, supplier: dict):
+        super().__init__()
+        self.setWindowTitle(f"Products — {supplier['name']}")
+        self.resize(680, 400)
+        self._build(supplier)
+
+    def _build(self, supplier):
+        from models.product_model import get_all_products
+        from utils.helpers import format_currency
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 14, 16, 14)
+        root.setSpacing(10)
+
+        heading = QLabel(
+            f"<b>{supplier['name']}</b>  —  products supplied")
+        heading.setStyleSheet("font-size:15px;color:#0f172a;")
+        root.addWidget(heading)
+
+        products = [p for p in get_all_products()
+                    if p.get("supplier_id") == supplier["id"]]
+
+        table = QTableWidget()
+        table.setColumnCount(6)
+        table.setHorizontalHeaderLabels(
+            ["ID", "Name", "Category", "Qty", "Buy Price", "Sale Price"])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.setAlternatingRowColors(True)
+        table.setShowGrid(False)
+        table.setStyleSheet(_TABLE_STYLE)
+        table.setRowCount(len(products))
+
+        for row, p in enumerate(products):
+            for col, val in enumerate([
+                str(p.get("id", "")),
+                p.get("name", ""),
+                p.get("category", ""),
+                str(p.get("quantity", 0)),
+                format_currency(p.get("purchase_price", 0)),
+                format_currency(p.get("sale_price", 0)),
+            ]):
+                item = QTableWidgetItem(val)
+                item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+                table.setItem(row, col, item)
+            table.setRowHeight(row, 40)
+
+        root.addWidget(table)
+
+        close = QPushButton("Close")
+        close.setStyleSheet(_GRAY)
+        close.clicked.connect(self.accept)
+        root.addWidget(close, alignment=Qt.AlignRight)

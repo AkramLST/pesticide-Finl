@@ -290,9 +290,9 @@ class SellProductDialog(QDialog):
             customer_address = self.new_address.text().strip()
 
         inv_number = generate_invoice_number()
-        sold_by    = session.get_user().get("username", "") if session.get_user() else ""
+        sold_by    = session.user.get("username", "") if session.user else ""
 
-        user_id = session.get_user().get("id") if session.get_user() else None
+        user_id = session.user.get("id") if session.user else None
         sale_data = {
             "invoice_number":  inv_number,
             "customer_id":     customer_id,
