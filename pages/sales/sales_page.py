@@ -1,4 +1,5 @@
 import os
+import webbrowser
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QLineEdit, QComboBox, QTableWidget, QTableWidgetItem,
@@ -180,6 +181,22 @@ class SalesPage(QWidget):
             "QPushButton:hover{background:#fee2e2;}")
         del_btn.clicked.connect(self._delete_sale)
 
+        xl_btn = QPushButton("📊  Export Excel")
+        xl_btn.setFixedHeight(36)
+        xl_btn.setStyleSheet(
+            "QPushButton{background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;"
+            "border-radius:8px;font-size:13px;font-weight:600;padding:0 16px;}"
+            "QPushButton:hover{background:#a7f3d0;}")
+        xl_btn.clicked.connect(self._export_excel)
+
+        pdf_btn = QPushButton("📄  Export PDF")
+        pdf_btn.setFixedHeight(36)
+        pdf_btn.setStyleSheet(
+            "QPushButton{background:#fef3c7;color:#92400e;border:1px solid #fde68a;"
+            "border-radius:8px;font-size:13px;font-weight:600;padding:0 16px;}"
+            "QPushButton:hover{background:#fef9c3;}")
+        pdf_btn.clicked.connect(self._export_pdf)
+
         hint = QLabel("Double-click a row to open invoice PDF")
         hint.setStyleSheet("font-size:12px;color:#94a3b8;")
 
@@ -187,6 +204,8 @@ class SalesPage(QWidget):
         act_row.addWidget(pay_btn)
         act_row.addWidget(del_btn)
         act_row.addStretch()
+        act_row.addWidget(xl_btn)
+        act_row.addWidget(pdf_btn)
         act_row.addWidget(hint)
 
         wl.addWidget(self.table)
@@ -316,6 +335,30 @@ class SalesPage(QWidget):
             QMessageBox.information(self, "Fully Paid", "This sale is already fully paid.")
             return
         PaymentDialog(sale, self.load_data).exec()
+
+    def _export_excel(self):
+        if not self._all_sales:
+            QMessageBox.information(self, "Empty", "No data to export.")
+            return
+        try:
+            from services.export_service import export_sales_excel
+            path = export_sales_excel(self._all_sales)
+            QMessageBox.information(self, "Exported", f"Excel saved to:\n{path}")
+            os.startfile(path)
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", str(e))
+
+    def _export_pdf(self):
+        if not self._all_sales:
+            QMessageBox.information(self, "Empty", "No data to export.")
+            return
+        try:
+            from services.export_service import export_sales_pdf
+            path = export_sales_pdf(self._all_sales)
+            QMessageBox.information(self, "Exported", f"PDF saved to:\n{path}")
+            os.startfile(path)
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", str(e))
 
     def _delete_sale(self):
         sale = self._selected_sale()

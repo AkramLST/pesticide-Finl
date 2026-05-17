@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
+import os
 from models.customer_model import (
     get_all_customers, insert_customer, update_customer, delete_customer
 )
@@ -144,7 +145,8 @@ class CustomersPage(QWidget):
         act_row = QHBoxLayout()
         for label, style, slot in [
             ("📋  History",       _BLUE, self._history),
-            ("💵  Add Payment",   _GREEN.replace("#2e7d32","#0369a1").replace("#1b5e20","#075985"), self._payment),
+            ("�  Statement PDF", _GREEN.replace("#2e7d32","#7c3aed").replace("#1b5e20","#6d28d9"), self._statement),
+            ("�💵  Add Payment",   _GREEN.replace("#2e7d32","#0369a1").replace("#1b5e20","#075985"), self._payment),
             ("✏  Edit",           _GRAY, self._edit),
             ("🗑  Delete",         _RED,  self._delete),
         ]:
@@ -245,6 +247,33 @@ class CustomersPage(QWidget):
         c = self._selected()
         if c:
             PurchaseHistoryDialog(c).exec()
+
+    def _statement(self):
+        c = self._selected()
+        if not c:
+            return
+        sales = self._sales_for(c)
+        if not sales:
+            QMessageBox.information(self, "No Sales",
+                "No sales records found for this customer.")
+            return
+        try:
+            from services.export_service import export_customer_statement
+            path = export_customer_statement(c, sales)
+            QMessageBox.information(self, "Statement Generated",
+                f"PDF saved to:\n{path}")
+            os.startfile(path)
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", str(e))
+
+    @staticmethod
+    def _sales_for(customer: dict) -> list:
+        sales = [s for s in get_all_sales() if s.get("customer_id") == customer["id"]]
+        for s in sales:
+            items = get_sale_items(s["id"])
+            s["_product"] = items[0]["product_name"] if items else "—"
+            s["_qty"]     = sum(i["quantity"] for i in items)
+        return sales
 
     def _payment(self):
         c = self._selected()
