@@ -1,7 +1,8 @@
 from PySide6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QFrame,
     QSizePolicy, QGraphicsDropShadowEffect, QScrollArea,
-    QTableWidget, QTableWidgetItem, QHeaderView, QPushButton
+    QTableWidget, QTableWidgetItem, QHeaderView, QPushButton,
+    QGridLayout
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
@@ -49,8 +50,8 @@ class DashboardPage(QWidget):
         content = QWidget()
         content.setStyleSheet("background: #f1f5f9;")
         root = QVBoxLayout(content)
-        root.setContentsMargins(28, 24, 28, 28)
-        root.setSpacing(24)
+        root.setContentsMargins(20, 16, 20, 20)
+        root.setSpacing(16)
 
         # ── Header
         header = QHBoxLayout()
@@ -92,10 +93,10 @@ class DashboardPage(QWidget):
             b_layout.addStretch()
             root.addWidget(banner)
 
-        # ── Stat Cards row
+        # ── Stat Cards grid (2 rows x 3 cols — responsive)
         self._card_widgets = {}
-        cards_row = QHBoxLayout()
-        cards_row.setSpacing(16)
+        cards_grid = QGridLayout()
+        cards_grid.setSpacing(12)
         values = [
             str(stats["products"]),
             str(stats["customers"]),
@@ -104,26 +105,39 @@ class DashboardPage(QWidget):
             stats["pending"],
             str(stats["low_stock"]),
         ]
-        for (title, icon, accent, bg1, bg2), value in zip(_CARDS, values):
-            cards_row.addWidget(self._make_stat_card(title, icon, value, accent, bg1, bg2))
-        root.addLayout(cards_row)
+        for i, ((title, icon, accent, bg1, bg2), value) in enumerate(zip(_CARDS, values)):
+            cards_grid.addWidget(
+                self._make_stat_card(title, icon, value, accent, bg1, bg2),
+                i // 3, i % 3
+            )
+        root.addLayout(cards_grid)
 
         # ── Charts row
         charts_row = QHBoxLayout()
-        charts_row.setSpacing(20)
-        charts_row.addWidget(self._make_weekly_sales_chart(), stretch=3)
-        charts_row.addWidget(self._make_inventory_pie_chart(), stretch=2)
+        charts_row.setSpacing(14)
+        weekly = self._make_weekly_sales_chart()
+        pie    = self._make_inventory_pie_chart()
+        weekly.setMaximumHeight(280)
+        pie.setMaximumHeight(280)
+        charts_row.addWidget(weekly, stretch=3)
+        charts_row.addWidget(pie,    stretch=2)
         root.addLayout(charts_row)
 
-        # ── Bottom section: Recent Sales + Low Stock table + Pending
+        # ── Bottom section: Recent Sales + Low Stock table
         bottom = QHBoxLayout()
-        bottom.setSpacing(20)
-        bottom.addWidget(self._make_recent_sales_panel(), stretch=3)
-        bottom.addWidget(self._make_low_stock_panel(low_stock_items), stretch=2)
+        bottom.setSpacing(14)
+        recent = self._make_recent_sales_panel()
+        low    = self._make_low_stock_panel(low_stock_items)
+        recent.setMaximumHeight(280)
+        low.setMaximumHeight(280)
+        bottom.addWidget(recent, stretch=3)
+        bottom.addWidget(low,    stretch=2)
         root.addLayout(bottom)
 
         # ── Pending payments panel
-        root.addWidget(self._make_pending_payments_panel())
+        pend_panel = self._make_pending_payments_panel()
+        pend_panel.setMaximumHeight(280)
+        root.addWidget(pend_panel)
 
         root.addStretch()
         scroll.setWidget(content)
@@ -136,7 +150,7 @@ class DashboardPage(QWidget):
     def _make_stat_card(self, title, icon, value, accent, bg1, bg2) -> QFrame:
         card = QFrame()
         card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        card.setFixedHeight(110)
+        card.setFixedHeight(96)
         card.setAttribute(Qt.WA_StyledBackground, True)
         card.setStyleSheet(f"""
             QFrame {{
@@ -327,7 +341,7 @@ class DashboardPage(QWidget):
         values = [raw.get(str(d), 0) for d in days]
         labels = [day_strs[str(d)] for d in days]
 
-        fig, ax = plt.subplots(figsize=(5, 2.6))
+        fig, ax = plt.subplots(figsize=(5, 2.2))
         fig.patch.set_facecolor("white")
         ax.set_facecolor("#f8fafc")
         colors = ["#2e7d32" if v == max(values) else "#86efac" for v in values]
@@ -344,7 +358,7 @@ class DashboardPage(QWidget):
         fig.tight_layout()
 
         canvas = FigureCanvas(fig)
-        canvas.setFixedHeight(220)
+        canvas.setFixedHeight(200)
         layout.addWidget(canvas)
         plt.close(fig)
         return panel
@@ -364,7 +378,7 @@ class DashboardPage(QWidget):
         colors = [c for c, s in zip(colors, [in_stock, low_stock, out_stock]) if s > 0]
         labels = [l for l, s in zip(labels, [in_stock, low_stock, out_stock]) if s > 0]
 
-        fig, ax = plt.subplots(figsize=(3.5, 2.6))
+        fig, ax = plt.subplots(figsize=(3.5, 2.2))
         fig.patch.set_facecolor("white")
         if sizes:
             wedges, texts, autotexts = ax.pie(
@@ -384,7 +398,7 @@ class DashboardPage(QWidget):
         fig.tight_layout()
 
         canvas = FigureCanvas(fig)
-        canvas.setFixedHeight(220)
+        canvas.setFixedHeight(200)
         layout.addWidget(canvas)
         plt.close(fig)
         return panel
