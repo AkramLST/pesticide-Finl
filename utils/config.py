@@ -1,21 +1,51 @@
 import os
+from pathlib import Path
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# =========================
+# Application Information
+# =========================
 
 APP_NAME = "Jadeed Zarai Markaz"
 APP_VERSION = "1.0.0"
 
-DB_PATH = os.path.join(BASE_DIR, "database", "pesticide.db")
+# =========================
+# Application Data Folder
+# =========================
 
-ASSETS_DIR = os.path.join(BASE_DIR, "assets")
-IMAGES_DIR = os.path.join(BASE_DIR, "images")
-EXPORTS_DIR = os.path.join(BASE_DIR, "exports")
-INVOICES_DIR = os.path.join(EXPORTS_DIR, "invoices")
-BACKUPS_DIR = os.path.join(BASE_DIR, "backups")
-LOGS_DIR = os.path.join(BASE_DIR, "logs")
+APP_DATA_DIR = Path.home() / "JadeedZaraiMarkaz"
 
-for _dir in (EXPORTS_DIR, INVOICES_DIR, BACKUPS_DIR, LOGS_DIR):
-    os.makedirs(_dir, exist_ok=True)
+APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# =========================
+# Database
+# =========================
+
+DB_PATH = str(APP_DATA_DIR / "pesticide.db")
+
+# =========================
+# Directories
+# =========================
+
+ASSETS_DIR = str(APP_DATA_DIR / "assets")
+IMAGES_DIR = str(APP_DATA_DIR / "images")
+EXPORTS_DIR = str(APP_DATA_DIR / "exports")
+INVOICES_DIR = str(Path(EXPORTS_DIR) / "invoices")
+BACKUPS_DIR = str(APP_DATA_DIR / "backups")
+LOGS_DIR = str(APP_DATA_DIR / "logs")
+
+for directory in (
+    ASSETS_DIR,
+    IMAGES_DIR,
+    EXPORTS_DIR,
+    INVOICES_DIR,
+    BACKUPS_DIR,
+    LOGS_DIR,
+):
+    os.makedirs(directory, exist_ok=True)
+
+# =========================
+# Theme Colors
+# =========================
 
 COLORS = {
     "primary": "#2e7d32",
@@ -34,16 +64,67 @@ COLORS = {
     "border": "#e2e8f0",
 }
 
-PAYMENT_METHODS = ["Cash", "Bank Transfer", "EasyPaisa", "JazzCash"]
+# =========================
+# Payment Methods
+# =========================
 
-PRODUCT_CATEGORIES = ["Insecticide", "Herbicide", "Fungicide", "Rodenticide", "Fertilizer", "Other"]
+PAYMENT_METHODS = [
+    "Cash",
+    "Bank Transfer",
+    "EasyPaisa",
+    "JazzCash",
+]
 
-PRODUCT_BRANDS = ["Bayer", "Syngenta", "FMC", "Corteva", "UPL", "Adama", "Other"]
+# =========================
+# Product Data
+# =========================
 
-FORMULATIONS = ["Liquid", "Powder", "Granules", "Spray", "Tablet", "Other"]
+PRODUCT_CATEGORIES = [
+    "Insecticide",
+    "Herbicide",
+    "Fungicide",
+    "Rodenticide",
+    "Fertilizer",
+    "Other",
+]
 
-USER_ROLES = ["Admin", "Manager", "Staff"]
+PRODUCT_BRANDS = [
+    "Bayer",
+    "Syngenta",
+    "FMC",
+    "Corteva",
+    "UPL",
+    "Adama",
+    "Other",
+]
 
-ADMIN_USERS = ["khudada", "hamza", "waseem"]
+FORMULATIONS = [
+    "Liquid",
+    "Powder",
+    "Granules",
+    "Spray",
+    "Tablet",
+    "Other",
+]
+
+# =========================
+# Users & Roles
+# =========================
+
+USER_ROLES = [
+    "Admin",
+    "Manager",
+    "Staff",
+]
+
+ADMIN_USERS = [
+    "khudada",
+    "hamza",
+    "waseem",
+]
+
+# =========================
+# Pagination
+# =========================
 
 PAGINATION_SIZE = 20
