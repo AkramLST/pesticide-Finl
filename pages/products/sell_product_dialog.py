@@ -8,8 +8,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 
 from models.product_model import get_product_by_id, deduct_stock
-from models.customer_model import get_all_customers, insert_customer, update_customer_balance
+from models.customer_model import get_all_customers, insert_customer
 from models.sale_model import insert_sale
+from models.payment_model import record_sale_payment
 from utils.config import PAYMENT_METHODS
 from utils.session import session
 from utils.helpers import format_currency, generate_invoice_number
@@ -315,11 +316,18 @@ class SellProductDialog(QDialog):
         try:
             sale_id = insert_sale(sale_data, items_data)
             deduct_stock(p["id"], qty)
-            if customer_id:
-                update_customer_balance(customer_id, paid, remaining)
+            if paid > 0:
+                record_sale_payment(
+                    sale_id,
+                    paid,
+                    self.payment_combo.currentText(),
+                    notes="Initial payment at sale",
+                    recorded_by=user_id,
+                )
 
             # Generate PDF invoice
             inv_sale = {
+                "id":              sale_id,
                 **sale_data,
                 "discount_amount":  disc_amt,
                 "customer_name":    customer_name,

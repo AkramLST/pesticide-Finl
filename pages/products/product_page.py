@@ -1,13 +1,15 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton,
     QGridLayout, QScrollArea, QHBoxLayout, QLineEdit,
-    QFrame, QComboBox
+    QFrame, QComboBox, QCheckBox, QMessageBox
 )
 from PySide6.QtCore import Qt
 
 from pages.products.add_product_dialog import AddProductDialog
 from pages.products.product_card import ProductCard
 from models.product_model import get_all_products, get_low_stock_products
+from models.user_model import get_user_by_credentials
+from utils.session import session
 from utils.config import PRODUCT_CATEGORIES
 
 
@@ -18,6 +20,7 @@ class ProductPage(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet("background:#f1f5f9;")
         self._all_products = []
+        self._show_secret_products = False
         self._build_ui()
         self.load_products()
 
@@ -62,6 +65,10 @@ class ProductPage(QWidget):
         """)
         self.cat_filter.currentTextChanged.connect(self._filter_products)
 
+        self.secret_toggle = QCheckBox("Show Secret Products")
+        self.secret_toggle.setStyleSheet("font-size:12px; color:#334155;")
+        self.secret_toggle.stateChanged.connect(self._toggle_secret_products)
+
         add_btn = QPushButton("＋  Add Product")
         add_btn.setFixedHeight(38)
         add_btn.setStyleSheet("""
@@ -84,6 +91,7 @@ class ProductPage(QWidget):
         header_layout.addStretch()
         header_layout.addWidget(self.search_input)
         header_layout.addWidget(self.cat_filter)
+        header_layout.addWidget(self.secret_toggle)
         header_layout.addWidget(add_btn)
         header_layout.addWidget(refresh_btn)
 
@@ -140,7 +148,7 @@ class ProductPage(QWidget):
 
     # ──────────────────────────────────────────────────────
     def load_products(self):
-        self._all_products = get_all_products()
+        self._all_products = get_all_products(include_secret=self._show_secret_products)
         self._filter_products()
 
     def _filter_products(self):
@@ -151,7 +159,8 @@ class ProductPage(QWidget):
             p for p in self._all_products
             if (query in p.get("name", "").lower()
                 or query in p.get("brand", "").lower()
-                or query in p.get("category", "").lower())
+                or query in p.get("category", "").lower()
+                or query in (p.get("sub_category", "") or "").lower())
             and (cat == "All Categories" or p.get("category", "") == cat)
         ]
 
@@ -182,3 +191,36 @@ class ProductPage(QWidget):
         dialog = AddProductDialog()
         if dialog.exec():
             self.load_products()
+
+    def _toggle_secret_products(self, state: int):
+        if state != Qt.Checked:
+            self._show_secret_products = False
+            self.load_products()
+            return
+        if self._confirm_admin_password():
+            self._show_secret_products = True
+            self.load_products()
+            return
+        self.secret_toggle.blockSignals(True)
+        self.secret_toggle.setChecked(False)
+        self.secret_toggle.blockSignals(False)
+
+    def _confirm_admin_password(self) -> bool:
+        from PySide6.QtWidgets import QInputDialog
+
+        if not session.user:
+            QMessageBox.warning(self, "Access Denied", "Please log in again.")
+            return False
+        pwd, ok = QInputDialog.getText(
+            self,
+            "Administrator Password",
+            "Enter administrator password:",
+            QLineEdit.Password,
+        )
+        if not ok or not pwd:
+            return False
+        user = get_user_by_credentials(session.user.get("username", ""), pwd)
+        if not user or user.get("role") != "Admin":
+            QMessageBox.warning(self, "Access Denied", "Invalid administrator password.")
+            return False
+        return True

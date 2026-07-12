@@ -14,6 +14,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from datetime import datetime, timedelta
 
 from models.product_model import get_all_products, get_low_stock_products
+from models.product_model import get_category_metrics
 from models.sale_model import get_sales_summary, get_all_sales, get_weekly_sales, get_pending_sales
 from models.customer_model import get_all_customers
 from models.supplier_model import get_all_suppliers
@@ -111,6 +112,9 @@ class DashboardPage(QWidget):
                 i // 3, i % 3
             )
         root.addLayout(cards_grid)
+
+        category_panel = self._make_category_overview_panel()
+        root.addWidget(category_panel)
 
         # ── Charts row
         charts_row = QHBoxLayout()
@@ -454,6 +458,52 @@ class DashboardPage(QWidget):
                 table.setItem(r, 2, amt)
                 table.setItem(r, 3, QTableWidgetItem(format_datetime(row.get("sale_date", ""))))
             layout.addWidget(table)
+        return panel
+
+    def _make_category_overview_panel(self) -> QFrame:
+        panel = QFrame()
+        panel.setAttribute(Qt.WA_StyledBackground, True)
+        panel.setStyleSheet("QFrame{background:white;border-radius:14px;border:1px solid #e2e8f0;}")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(18, 14, 18, 14)
+        layout.setSpacing(10)
+
+        title = QLabel("Category Snapshot")
+        title.setStyleSheet("font-size:15px;font-weight:700;color:#0f172a;")
+        layout.addWidget(title)
+
+        grid = QGridLayout()
+        grid.setSpacing(10)
+        metrics = get_category_metrics()
+        accents = ["#2563eb", "#f59e0b", "#10b981"]
+        bg = ["#eff6ff", "#fffbeb", "#f0fdf4"]
+        for idx, metric in enumerate(metrics):
+            card = QFrame()
+            card.setAttribute(Qt.WA_StyledBackground, True)
+            card.setStyleSheet(
+                f"QFrame{{background:{bg[idx]};border:1px solid {accents[idx]}33;"
+                "border-radius:12px;}}"
+            )
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(14, 12, 14, 12)
+            card_layout.setSpacing(4)
+            heading = QLabel(metric["category"])
+            heading.setStyleSheet(f"font-size:14px;font-weight:700;color:{accents[idx]};")
+            card_layout.addWidget(heading)
+            lines = [
+                f"Stock Qty: <b>{metric['stock_quantity']}</b>",
+                f"Stock Value: <b>{format_currency(metric['stock_value'])}</b>",
+                f"Total Sales: <b>{format_currency(metric['total_sales'])}</b>",
+                f"Income: <b>{format_currency(metric['total_income'])}</b>",
+                f"Products: <b>{metric['total_products']}</b>",
+                f"Low Stock: <b>{metric['low_stock']}</b>",
+            ]
+            for line in lines:
+                lbl = QLabel(line)
+                lbl.setStyleSheet("font-size:12px;color:#334155;")
+                card_layout.addWidget(lbl)
+            grid.addWidget(card, 0, idx)
+        layout.addLayout(grid)
         return panel
 
     # ──────────────────────────────────────────────────────

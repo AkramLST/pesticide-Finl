@@ -32,6 +32,7 @@ class ProductCard(QWidget):
             badge_text, badge_color, badge_bg = "Low Stock",    "#92400e", "#fef3c7"
         else:
             badge_text, badge_color, badge_bg = "In Stock",     "#065f46", "#d1fae5"
+        secret = bool(p.get("secret_product", 0))
 
         # ── Card frame
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -84,6 +85,15 @@ class ProductCard(QWidget):
         badge.adjustSize()
         badge.move(10, 10)
 
+        if secret:
+            secret_badge = QLabel("Secret", img_frame)
+            secret_badge.setStyleSheet(
+                "background:#111827;color:white;border-radius:6px;padding:2px 8px;"
+                "font-size:10px;font-weight:700;"
+            )
+            secret_badge.adjustSize()
+            secret_badge.move(190, 10)
+
         root.addWidget(img_frame)
 
         # ── Info section
@@ -97,6 +107,8 @@ class ProductCard(QWidget):
 
         brand_cat = QLabel(f"{p.get('brand','')}  ·  {p.get('category','')}")
         brand_cat.setStyleSheet("font-size:11px; color:#64748b;")
+        sub_cat = QLabel(p.get("sub_category", "") or "")
+        sub_cat.setStyleSheet("font-size:10px; color:#94a3b8;")
 
         price_lbl = QLabel(format_currency(p.get("sale_price", 0)))
         price_lbl.setStyleSheet("font-size:16px; font-weight:800; color:#2e7d32;")
@@ -118,6 +130,8 @@ class ProductCard(QWidget):
 
         info.addWidget(name_lbl)
         info.addWidget(brand_cat)
+        if p.get("sub_category"):
+            info.addWidget(sub_cat)
         info.addWidget(price_lbl)
         info.addWidget(qty_lbl)
         info.addStretch()

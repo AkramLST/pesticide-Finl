@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -12,11 +13,12 @@ from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 
 from utils.config import INVOICES_DIR as INVOICE_DIR, APP_NAME
 from models.settings_model import get_setting
+from models.payment_model import get_sale_payments
 
 W, H = A4
 
 
-def generate_invoice(sale: dict, items: list) -> str:
+def generate_invoice(sale: dict, items: list, payments: Optional[list] = None) -> str:
     """
     Generate a PDF invoice and save to exports/invoices/.
     Returns the full file path.
@@ -165,6 +167,38 @@ def generate_invoice(sale: dict, items: list) -> str:
     ]))
     story.append(tot_tbl)
     story.append(Spacer(1, 0.6 * cm))
+
+    payments = payments if payments is not None else get_sale_payments(
+        sale.get("id") or sale.get("sale_id") or 0
+    )
+    if payments:
+        story.append(Paragraph("Payment History", ParagraphStyle(
+            "payh", parent=styles["Normal"], fontSize=11,
+            fontName="Helvetica-Bold", textColor=colors.HexColor("#0f172a"),
+            spaceAfter=6
+        )))
+        pay_rows = [["Date", "Amount", "Remaining", "Method", "Notes"]]
+        for pay in payments:
+            pay_rows.append([
+                str(pay.get("payment_date", "")),
+                f"Rs {float(pay.get('amount_paid', 0) or 0):,.0f}",
+                f"Rs {float(pay.get('remaining_balance', 0) or 0):,.0f}",
+                pay.get("payment_method", "") or "—",
+                pay.get("notes", "") or "",
+            ])
+        pay_tbl = Table(pay_rows, colWidths=[4 * cm, 3 * cm, 3 * cm, 3 * cm, 4 * cm], repeatRows=1)
+        pay_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#e2e8f0")),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(pay_tbl)
+        story.append(Spacer(1, 0.4 * cm))
+
     story.append(HRFlowable(width="100%", thickness=0.5,
                              color=colors.HexColor("#e2e8f0"), spaceAfter=6))
     story.append(Paragraph(inv_footer, footer_s))

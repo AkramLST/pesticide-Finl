@@ -9,9 +9,12 @@ from PySide6.QtGui import QColor
 
 import os
 from models.customer_model import (
-    get_all_customers, insert_customer, update_customer, delete_customer
+    get_all_customers, insert_customer, update_customer, delete_customer,
+    apply_customer_payment
 )
 from models.sale_model import get_all_sales, get_sale_items
+from models.payment_model import get_customer_payments
+from utils.session import session
 from utils.helpers import format_currency, format_datetime
 
 _TABLE_STYLE = """
@@ -196,6 +199,7 @@ class CustomersPage(QWidget):
         self.table.setRowCount(len(customers))
         for row, c in enumerate(customers):
             pend = c.get("total_pending", 0) or 0
+            row_color = QColor("#fef2f2") if pend > 0 else None
             cells = [
                 str(c.get("id","")),
                 c.get("name",""),
@@ -208,6 +212,8 @@ class CustomersPage(QWidget):
             for col, text in enumerate(cells):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+                if row_color:
+                    item.setBackground(row_color)
                 if col == COL_PEND and pend > 0:
                     item.setForeground(QColor("#dc2626"))
                 self.table.setItem(row, col, item)
@@ -269,6 +275,7 @@ class CustomersPage(QWidget):
     @staticmethod
     def _sales_for(customer: dict) -> list:
         sales = [s for s in get_all_sales() if s.get("customer_id") == customer["id"]]
+        payments = get_customer_payments(customer["id"])
         for s in sales:
             items = get_sale_items(s["id"])
             s["_product"] = items[0]["product_name"] if items else "—"
@@ -375,7 +382,7 @@ class PurchaseHistoryDialog(QDialog):
     def __init__(self, customer: dict):
         super().__init__()
         self.setWindowTitle(f"Purchase History — {customer['name']}")
-        self.resize(700, 400)
+        self.resize(760, 560)
         self._build(customer)
 
     def _build(self, customer):
@@ -388,11 +395,12 @@ class PurchaseHistoryDialog(QDialog):
         root.addWidget(heading)
 
         sales = [s for s in get_all_sales() if s.get("customer_id") == customer["id"]]
+        payments = get_customer_payments(customer["id"])
 
         table = QTableWidget()
-        table.setColumnCount(7)
+        table.setColumnCount(8)
         table.setHorizontalHeaderLabels(
-            ["Invoice", "Product", "Qty", "Total", "Paid", "Remaining", "Date"])
+            ["Invoice", "Product", "Qty", "Total", "Paid", "Remaining", "Date", "Last Payment"])
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -406,6 +414,7 @@ class PurchaseHistoryDialog(QDialog):
             prod   = items[0]["product_name"] if items else "—"
             qty    = sum(i["quantity"] for i in items)
             rem    = s.get("remaining_amount", 0) or 0
+            last_payment = next((p for p in reversed(payments) if p.get("sale_id") == s["id"]), None)
             cells  = [
                 s.get("invoice_number",""),
                 prod, str(qty),
@@ -413,6 +422,7 @@ class PurchaseHistoryDialog(QDialog):
                 format_currency(s.get("paid_amount",0) or 0),
                 format_currency(rem),
                 format_datetime(s.get("sale_date","") or ""),
+                format_datetime(last_payment.get("payment_date","") if last_payment else ""),
             ]
             for col, text in enumerate(cells):
                 item = QTableWidgetItem(text)
@@ -422,6 +432,36 @@ class PurchaseHistoryDialog(QDialog):
             table.setRowHeight(row, 40)
 
         root.addWidget(table)
+
+        ledger_label = QLabel("<b>Payment Ledger</b>")
+        root.addWidget(ledger_label)
+
+        ledger = QTableWidget()
+        ledger.setColumnCount(6)
+        ledger.setHorizontalHeaderLabels(
+            ["Date", "Invoice", "Amount", "Remaining", "Method", "Notes"])
+        ledger.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        ledger.verticalHeader().setVisible(False)
+        ledger.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        ledger.setAlternatingRowColors(True)
+        ledger.setShowGrid(False)
+        ledger.setStyleSheet(_TABLE_STYLE)
+        ledger.setRowCount(len(payments))
+        for row, pay in enumerate(payments):
+            cells = [
+                format_datetime(pay.get("payment_date", "") or ""),
+                pay.get("invoice_number", "") or "—",
+                format_currency(pay.get("amount_paid", 0) or 0),
+                format_currency(pay.get("remaining_balance", 0) or 0),
+                pay.get("payment_method", "") or "—",
+                pay.get("notes", "") or "",
+            ]
+            for col, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                if col == 3 and (pay.get("remaining_balance", 0) or 0) > 0:
+                    item.setForeground(QColor("#dc2626"))
+                ledger.setItem(row, col, item)
+        root.addWidget(ledger)
 
         close = QPushButton("Close")
         close.setStyleSheet(_GRAY)
@@ -437,7 +477,7 @@ class CustomerPaymentDialog(QDialog):
         self.customer = customer
         self.refresh_cb = refresh_cb
         self.setWindowTitle(f"Add Payment — {customer['name']}")
-        self.resize(380, 220)
+        self.resize(460, 380)
         self._build()
 
     def _build(self):
@@ -459,7 +499,30 @@ class CustomerPaymentDialog(QDialog):
             "QDoubleSpinBox{border:1.5px solid #e2e8f0;border-radius:7px;"
             "padding:8px;font-size:13px;}")
         form.addRow("Amount:", self.amount_spin)
+
+        from utils.config import PAYMENT_METHODS
+        from PySide6.QtWidgets import QComboBox, QTextEdit
+        self.method_cb = QComboBox()
+        self.method_cb.addItems(PAYMENT_METHODS)
+        form.addRow("Method:", self.method_cb)
+
+        self.notes_i = QTextEdit()
+        self.notes_i.setFixedHeight(60)
+        self.notes_i.setPlaceholderText("Optional notes")
+        form.addRow("Notes:", self.notes_i)
         root.addLayout(form)
+
+        self.history_table = QTableWidget()
+        self.history_table.setColumnCount(4)
+        self.history_table.setHorizontalHeaderLabels(["Date", "Amount", "Remaining", "Method"])
+        self.history_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.history_table.verticalHeader().setVisible(False)
+        self.history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.history_table.setShowGrid(False)
+        self.history_table.setFixedHeight(140)
+        root.addWidget(QLabel("<b>Payment History</b>"))
+        root.addWidget(self.history_table)
+        self._load_history()
 
         btn_row = QHBoxLayout()
         cancel = QPushButton("Cancel")
@@ -474,19 +537,33 @@ class CustomerPaymentDialog(QDialog):
         root.addLayout(btn_row)
 
     def _confirm(self):
-        from database.connection import get_connection
         amount = self.amount_spin.value()
-        pend   = self.customer.get("total_pending", 0) or 0
-        paid   = self.customer.get("total_paid", 0) or 0
-        conn = get_connection()
-        conn.execute(
-            "UPDATE customers SET total_paid=?, total_pending=?, "
-            "updated_at=datetime('now','localtime') WHERE id=?",
-            (paid + amount, max(0.0, pend - amount), self.customer["id"])
-        )
-        conn.commit()
-        conn.close()
+        method = self.method_cb.currentText()
+        notes = self.notes_i.toPlainText().strip()
+        try:
+            apply_customer_payment(
+                self.customer["id"],
+                amount,
+                method,
+                notes,
+                session.user.get("id") if session.user else None,
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", str(exc))
+            return
         QMessageBox.information(self, "Success",
             f"Payment of {format_currency(amount)} recorded.")
         self.refresh_cb()
         self.accept()
+
+    def _load_history(self):
+        payments = get_customer_payments(self.customer["id"])
+        self.history_table.setRowCount(len(payments))
+        for row, pay in enumerate(payments):
+            for col, text in enumerate([
+                pay.get("payment_date", ""),
+                format_currency(pay.get("amount_paid", 0) or 0),
+                format_currency(pay.get("remaining_balance", 0) or 0),
+                pay.get("payment_method", "") or "—",
+            ]):
+                self.history_table.setItem(row, col, QTableWidgetItem(str(text)))

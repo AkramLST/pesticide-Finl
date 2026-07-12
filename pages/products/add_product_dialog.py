@@ -1,14 +1,15 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QLineEdit, QTextEdit,
     QPushButton, QComboBox, QFileDialog, QFormLayout,
-    QMessageBox, QSpinBox, QDoubleSpinBox, QHBoxLayout
+    QMessageBox, QSpinBox, QDoubleSpinBox, QHBoxLayout, QCheckBox
 )
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt
 
 from models.product_model import insert_product
 from models.supplier_model import get_all_suppliers
-from utils.config import PRODUCT_CATEGORIES, PRODUCT_BRANDS, FORMULATIONS
+from models.brand_model import get_all_brands
+from utils.config import PRODUCT_CATEGORIES, PRODUCT_SUBCATEGORIES, FORMULATIONS
 
 
 class AddProductDialog(QDialog):
@@ -34,10 +35,14 @@ class AddProductDialog(QDialog):
         self.desc_input.setFixedHeight(70)
 
         self.brand_combo = QComboBox()
-        self.brand_combo.addItems(PRODUCT_BRANDS)
+        self._load_brands()
 
         self.category_combo = QComboBox()
         self.category_combo.addItems(PRODUCT_CATEGORIES)
+        self.category_combo.currentTextChanged.connect(self._load_subcategories)
+
+        self.subcategory_combo = QComboBox()
+        self._load_subcategories(self.category_combo.currentText())
 
         self.formulation_combo = QComboBox()
         self.formulation_combo.addItems(FORMULATIONS)
@@ -67,6 +72,8 @@ class AddProductDialog(QDialog):
         self.low_stock_input.setRange(0, 10000)
         self.low_stock_input.setValue(5)
 
+        self.secret_checkbox = QCheckBox("Mark as secret product")
+
         self.mfg_input = QLineEdit()
         self.mfg_input.setPlaceholderText("YYYY-MM-DD")
 
@@ -87,6 +94,7 @@ class AddProductDialog(QDialog):
         form.addRow("Description:", self.desc_input)
         form.addRow("Brand:", self.brand_combo)
         form.addRow("Category:", self.category_combo)
+        form.addRow("Sub-Category:", self.subcategory_combo)
         form.addRow("Formulation:", self.formulation_combo)
         form.addRow("Supplier:", self.supplier_combo)
         form.addRow("Purchase Price:", self.purchase_price)
@@ -94,6 +102,7 @@ class AddProductDialog(QDialog):
         form.addRow("Weight/Unit:", self.weight_input)
         form.addRow("Quantity:", self.quantity_input)
         form.addRow("Low Stock At:", self.low_stock_input)
+        form.addRow("", self.secret_checkbox)
         form.addRow("Mfg Date:", self.mfg_input)
         form.addRow("Expiry Date:", self.expiry_input)
         form.addRow("Image:", img_row)
@@ -119,6 +128,26 @@ class AddProductDialog(QDialog):
             pix = QPixmap(path).scaled(58, 58, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.image_preview.setPixmap(pix)
 
+    def _load_brands(self):
+        self.brand_combo.clear()
+        brands = get_all_brands()
+        if not brands:
+            self.brand_combo.addItem("Other")
+            return
+        for brand in brands:
+            self.brand_combo.addItem(brand["name"])
+
+    def _load_subcategories(self, category: str):
+        current = self.subcategory_combo.currentText() if hasattr(self, "subcategory_combo") else ""
+        self.subcategory_combo.blockSignals(True)
+        self.subcategory_combo.clear()
+        self.subcategory_combo.addItems(PRODUCT_SUBCATEGORIES.get(category, ["Other"]))
+        if current:
+            idx = self.subcategory_combo.findText(current)
+            if idx >= 0:
+                self.subcategory_combo.setCurrentIndex(idx)
+        self.subcategory_combo.blockSignals(False)
+
     def _save(self):
         name = self.name_input.text().strip()
         if not name:
@@ -130,6 +159,7 @@ class AddProductDialog(QDialog):
             "description":         self.desc_input.toPlainText(),
             "brand":               self.brand_combo.currentText(),
             "category":            self.category_combo.currentText(),
+            "sub_category":        self.subcategory_combo.currentText(),
             "formulation":         self.formulation_combo.currentText(),
             "purchase_price":      self.purchase_price.value(),
             "sale_price":          self.sale_price.value(),
@@ -140,6 +170,7 @@ class AddProductDialog(QDialog):
             "manufacturing_date":  self.mfg_input.text().strip() or None,
             "expiry_date":         self.expiry_input.text().strip() or None,
             "low_stock_threshold": self.low_stock_input.value(),
+            "secret_product":      1 if self.secret_checkbox.isChecked() else 0,
             "image":               self.image_path,
         }
 

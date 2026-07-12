@@ -1,6 +1,6 @@
 import hashlib
 from database.connection import get_connection
-from utils.config import ADMIN_USERS
+from utils.config import ADMIN_USERS, DEFAULT_BRANDS
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -25,16 +25,26 @@ def _upgrade_existing_tables(conn):
         ("sale_price",          "REAL    NOT NULL DEFAULT 0"),
         ("unit_type",           "TEXT"),
         ("supplier_id",         "INTEGER"),
+        ("sub_category",        "TEXT"),
         ("manufacturing_date",  "TEXT"),
         ("expiry_date",         "TEXT"),
         ("low_stock_threshold", "INTEGER NOT NULL DEFAULT 5"),
         ("barcode",             "TEXT"),
+        ("secret_product",      "INTEGER NOT NULL DEFAULT 0"),
         ("is_active",           "INTEGER DEFAULT 1"),
         ("created_at",          "TEXT"),
         ("updated_at",          "TEXT"),
     ]
     for col, defn in product_upgrades:
         _add_column_if_missing(conn, "products", col, defn)
+
+    payment_upgrades = [
+        ("remaining_balance", "REAL NOT NULL DEFAULT 0"),
+        ("recorded_by",       "INTEGER"),
+        ("created_at",        "TEXT"),
+    ]
+    for col, defn in payment_upgrades:
+        _add_column_if_missing(conn, "payments", col, defn)
 
     conn.commit()
 
@@ -78,6 +88,7 @@ def run_migrations():
         description         TEXT,
         brand               TEXT,
         category            TEXT,
+        sub_category        TEXT,
         formulation         TEXT,
         purchase_price      REAL    NOT NULL DEFAULT 0,
         sale_price          REAL    NOT NULL DEFAULT 0,
@@ -90,9 +101,18 @@ def run_migrations():
         low_stock_threshold INTEGER NOT NULL DEFAULT 5,
         image               TEXT,
         barcode             TEXT,
+        secret_product      INTEGER NOT NULL DEFAULT 0,
         is_active           INTEGER NOT NULL DEFAULT 1,
         created_at          TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
         updated_at          TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS brands (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT    NOT NULL UNIQUE,
+        is_active   INTEGER NOT NULL DEFAULT 1,
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+        updated_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
     );
 
     CREATE TABLE IF NOT EXISTS customers (
@@ -142,7 +162,10 @@ def run_migrations():
         amount_paid    REAL    NOT NULL DEFAULT 0,
         payment_method TEXT,
         payment_date   TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
-        notes          TEXT
+        notes          TEXT,
+        remaining_balance REAL NOT NULL DEFAULT 0,
+        recorded_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at      TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
     );
 
     CREATE TABLE IF NOT EXISTS invoices (
@@ -182,6 +205,7 @@ def run_migrations():
     _upgrade_existing_tables(conn)
     _seed_users(conn)
     _seed_settings(conn)
+    _seed_brands(conn)
 
     conn.close()
     log.info("Database migrations complete.")
@@ -218,4 +242,11 @@ def _seed_settings(conn):
     }
     for key, value in defaults.items():
         c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
+    conn.commit()
+
+
+def _seed_brands(conn):
+    c = conn.cursor()
+    for brand in DEFAULT_BRANDS:
+        c.execute("INSERT OR IGNORE INTO brands (name) VALUES (?)", (brand,))
     conn.commit()

@@ -2,14 +2,15 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QLineEdit, QTextEdit,
     QPushButton, QComboBox, QFileDialog, QFormLayout,
     QMessageBox, QSpinBox, QDoubleSpinBox, QHBoxLayout,
-    QScrollArea, QWidget
+    QScrollArea, QWidget, QCheckBox
 )
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt
 
 from models.product_model import update_product
 from models.supplier_model import get_all_suppliers
-from utils.config import PRODUCT_CATEGORIES, PRODUCT_BRANDS, FORMULATIONS
+from models.brand_model import get_all_brands
+from utils.config import PRODUCT_CATEGORIES, PRODUCT_SUBCATEGORIES, FORMULATIONS
 
 _BTN = """
     QPushButton {{ background:{bg}; color:white; padding:10px;
@@ -56,10 +57,14 @@ class EditProductDialog(QDialog):
         self.desc_input.setFixedHeight(65)
 
         self.brand_combo = QComboBox()
-        self.brand_combo.addItems(PRODUCT_BRANDS)
+        self._load_brands()
 
         self.category_combo = QComboBox()
         self.category_combo.addItems(PRODUCT_CATEGORIES)
+        self.category_combo.currentTextChanged.connect(self._load_subcategories)
+
+        self.subcategory_combo = QComboBox()
+        self._load_subcategories(self.category_combo.currentText())
 
         self.formulation_combo = QComboBox()
         self.formulation_combo.addItems(FORMULATIONS)
@@ -88,6 +93,8 @@ class EditProductDialog(QDialog):
         self.low_stock_input = QSpinBox()
         self.low_stock_input.setRange(0, 10_000)
 
+        self.secret_checkbox = QCheckBox("Mark as secret product")
+
         self.mfg_input = QLineEdit()
         self.mfg_input.setPlaceholderText("YYYY-MM-DD")
 
@@ -108,6 +115,7 @@ class EditProductDialog(QDialog):
         form.addRow("Description:", self.desc_input)
         form.addRow("Brand:", self.brand_combo)
         form.addRow("Category:", self.category_combo)
+        form.addRow("Sub-Category:", self.subcategory_combo)
         form.addRow("Formulation:", self.formulation_combo)
         form.addRow("Supplier:", self.supplier_combo)
         form.addRow("Purchase Price:", self.purchase_price)
@@ -115,6 +123,7 @@ class EditProductDialog(QDialog):
         form.addRow("Weight/Unit:", self.weight_input)
         form.addRow("Quantity:", self.quantity_input)
         form.addRow("Low Stock At:", self.low_stock_input)
+        form.addRow("", self.secret_checkbox)
         form.addRow("Mfg Date:", self.mfg_input)
         form.addRow("Expiry Date:", self.expiry_input)
         form.addRow("Image:", img_row)
@@ -132,6 +141,8 @@ class EditProductDialog(QDialog):
         self.desc_input.setPlainText(p.get("description", "") or "")
         self._set_combo(self.brand_combo,       p.get("brand", ""))
         self._set_combo(self.category_combo,    p.get("category", ""))
+        self._load_subcategories(self.category_combo.currentText())
+        self._set_combo(self.subcategory_combo, p.get("sub_category", ""))
         self._set_combo(self.formulation_combo, p.get("formulation", ""))
 
         # Supplier
@@ -146,6 +157,7 @@ class EditProductDialog(QDialog):
         self.weight_input.setText(p.get("weight", "") or "")
         self.quantity_input.setValue(p.get("quantity", 0) or 0)
         self.low_stock_input.setValue(p.get("low_stock_threshold", 5) or 5)
+        self.secret_checkbox.setChecked(bool(p.get("secret_product", 0)))
         self.mfg_input.setText(p.get("manufacturing_date", "") or "")
         self.expiry_input.setText(p.get("expiry_date", "") or "")
 
@@ -161,6 +173,26 @@ class EditProductDialog(QDialog):
         idx = combo.findText(value)
         if idx >= 0:
             combo.setCurrentIndex(idx)
+
+    def _load_brands(self):
+        self.brand_combo.clear()
+        brands = get_all_brands()
+        if not brands:
+            self.brand_combo.addItem("Other")
+            return
+        for brand in brands:
+            self.brand_combo.addItem(brand["name"])
+
+    def _load_subcategories(self, category: str):
+        current = self.subcategory_combo.currentText() if hasattr(self, "subcategory_combo") else ""
+        self.subcategory_combo.blockSignals(True)
+        self.subcategory_combo.clear()
+        self.subcategory_combo.addItems(PRODUCT_SUBCATEGORIES.get(category, ["Other"]))
+        if current:
+            idx = self.subcategory_combo.findText(current)
+            if idx >= 0:
+                self.subcategory_combo.setCurrentIndex(idx)
+        self.subcategory_combo.blockSignals(False)
 
     def _select_image(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select Image", "", "Images (*.png *.jpg *.jpeg)")
@@ -181,6 +213,7 @@ class EditProductDialog(QDialog):
             "description":         self.desc_input.toPlainText(),
             "brand":               self.brand_combo.currentText(),
             "category":            self.category_combo.currentText(),
+            "sub_category":        self.subcategory_combo.currentText(),
             "formulation":         self.formulation_combo.currentText(),
             "purchase_price":      self.purchase_price.value(),
             "sale_price":          self.sale_price.value(),
@@ -191,6 +224,7 @@ class EditProductDialog(QDialog):
             "manufacturing_date":  self.mfg_input.text().strip() or None,
             "expiry_date":         self.expiry_input.text().strip() or None,
             "low_stock_threshold": self.low_stock_input.value(),
+            "secret_product":      1 if self.secret_checkbox.isChecked() else 0,
             "image":               self.image_path,
         }
 

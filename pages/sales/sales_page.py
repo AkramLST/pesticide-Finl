@@ -4,14 +4,17 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QLineEdit, QComboBox, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QMessageBox, QDialog,
-    QScrollArea, QFormLayout, QDoubleSpinBox
+    QScrollArea, QFormLayout, QDoubleSpinBox, QTextEdit
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
-from models.sale_model import get_all_sales, get_sale_items, soft_delete_sale
+from models.sale_model import get_all_sales, get_sale_items, soft_delete_sale, get_sale_by_id
+from models.payment_model import record_sale_payment, get_sale_payments
 from utils.helpers import format_currency, format_datetime
+from utils.session import session
 from utils.config import PAYMENT_METHODS, INVOICES_DIR
+from services.invoice_service import generate_invoice
 
 _TABLE_STYLE = """
     QTableWidget { border:none; font-size:13px; background:white;
@@ -317,14 +320,30 @@ class SalesPage(QWidget):
             return
         inv = sale.get("invoice_number","")
         pdf = os.path.join(INVOICES_DIR, f"{inv}.pdf")
-        if os.path.exists(pdf):
-            try:
-                os.startfile(pdf)
-            except Exception as e:
-                QMessageBox.warning(self, "Error", str(e))
-        else:
-            QMessageBox.information(self, "Not Found",
-                f"Invoice PDF not found:\n{pdf}")
+        try:
+            fresh = get_sale_by_id(sale["id"]) or sale
+            items = get_sale_items(sale["id"])
+            payments = get_sale_payments(sale["id"])
+            inv_sale = {
+                **fresh,
+                "customer_name": fresh.get("customer_name") or sale.get("customer_name") or "Walk-in",
+                "customer_phone": fresh.get("customer_phone", "") or "",
+                "customer_address": fresh.get("customer_address", "") or "",
+                "discount_amount": fresh.get("discount", 0) or 0,
+                "sale_date": fresh.get("sale_date", "") or "",
+                "sold_by": fresh.get("seller_name") or fresh.get("sold_by", "") or "",
+            }
+            inv_items = [{
+                "name": i.get("product_name", ""),
+                "quantity": i.get("quantity", 0),
+                "unit_price": i.get("unit_price", 0),
+                "discount_pct": i.get("discount", 0),
+                "subtotal": i.get("subtotal", 0),
+            } for i in items]
+            pdf = generate_invoice(inv_sale, inv_items, payments)
+            os.startfile(pdf)
+        except Exception as e:
+            QMessageBox.warning(self, "Error", str(e))
 
     def _record_payment(self):
         sale = self._selected_sale()
@@ -382,7 +401,7 @@ class PaymentDialog(QDialog):
         self.sale = sale
         self.refresh_cb = refresh_cb
         self.setWindowTitle("Record Payment")
-        self.resize(380, 240)
+        self.resize(460, 420)
         self._build()
 
     def _build(self):
@@ -404,7 +423,30 @@ class PaymentDialog(QDialog):
             "QDoubleSpinBox{border:1.5px solid #e2e8f0;border-radius:7px;"
             "padding:8px;font-size:13px;}")
         form.addRow("Amount to Pay:", self.amount_spin)
+
+        self.method_cb = QComboBox()
+        self.method_cb.addItems(PAYMENT_METHODS)
+        form.addRow("Method:", self.method_cb)
+
+        self.notes_i = QTextEdit()
+        self.notes_i.setFixedHeight(60)
+        self.notes_i.setPlaceholderText("Optional notes")
+        form.addRow("Notes:", self.notes_i)
         root.addLayout(form)
+
+        history_label = QLabel("<b>Payment History</b>")
+        root.addWidget(history_label)
+        self.history_table = QTableWidget()
+        self.history_table.setColumnCount(4)
+        self.history_table.setHorizontalHeaderLabels(["Date", "Amount", "Remaining", "Method"])
+        self.history_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.history_table.verticalHeader().setVisible(False)
+        self.history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.history_table.setShowGrid(False)
+        self.history_table.setFixedHeight(160)
+        self.history_table.setRowCount(0)
+        root.addWidget(self.history_table)
+        self._load_history()
 
         btn_row = QHBoxLayout()
         ok = QPushButton("✅  Confirm Payment")
@@ -424,20 +466,56 @@ class PaymentDialog(QDialog):
         root.addLayout(btn_row)
 
     def _confirm(self):
-        from database.connection import get_connection
         amount = self.amount_spin.value()
-        rem    = self.sale.get("remaining_amount", 0) or 0
-        new_paid = (self.sale.get("paid_amount", 0) or 0) + amount
-        new_rem  = max(0.0, rem - amount)
-        conn = get_connection()
-        conn.execute(
-            "UPDATE sales SET paid_amount=?, remaining_amount=? WHERE id=?",
-            (new_paid, new_rem, self.sale["id"])
-        )
-        conn.commit()
-        conn.close()
+        method = self.method_cb.currentText()
+        notes = self.notes_i.toPlainText().strip()
+        try:
+            record_sale_payment(
+                self.sale["id"],
+                amount,
+                method,
+                notes=notes,
+                recorded_by=session.user.get("id") if session.user else None,
+            )
+            fresh = get_sale_by_id(self.sale["id"]) or self.sale
+            items = get_sale_items(self.sale["id"])
+            payments = get_sale_payments(self.sale["id"])
+            inv_sale = {
+                **fresh,
+                "customer_name": fresh.get("customer_name") or self.sale.get("customer_name") or "Walk-in",
+                "customer_phone": fresh.get("customer_phone", "") or "",
+                "customer_address": fresh.get("customer_address", "") or "",
+                "discount_amount": fresh.get("discount", 0) or 0,
+                "sale_date": fresh.get("sale_date", "") or "",
+                "sold_by": fresh.get("seller_name") or fresh.get("sold_by", "") or "",
+            }
+            inv_items = [{
+                "name": i.get("product_name", ""),
+                "quantity": i.get("quantity", 0),
+                "unit_price": i.get("unit_price", 0),
+                "discount_pct": i.get("discount", 0),
+                "subtotal": i.get("subtotal", 0),
+            } for i in items]
+            generate_invoice(inv_sale, inv_items, payments)
+            new_rem = fresh.get("remaining_amount", 0) or 0
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", str(exc))
+            return
         QMessageBox.information(self, "Success",
             f"Payment of {format_currency(amount)} recorded.\n"
             f"Remaining: {format_currency(new_rem)}")
         self.refresh_cb()
         self.accept()
+
+    def _load_history(self):
+        payments = get_sale_payments(self.sale["id"])
+        self.history_table.setRowCount(len(payments))
+        for row, pay in enumerate(payments):
+            cells = [
+                pay.get("payment_date", ""),
+                format_currency(pay.get("amount_paid", 0) or 0),
+                format_currency(pay.get("remaining_balance", 0) or 0),
+                pay.get("payment_method", "") or "—",
+            ]
+            for col, text in enumerate(cells):
+                self.history_table.setItem(row, col, QTableWidgetItem(str(text)))

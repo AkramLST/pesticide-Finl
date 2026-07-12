@@ -3,12 +3,13 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QLineEdit, QTextEdit, QFormLayout,
-    QScrollArea, QMessageBox, QSizePolicy, QCheckBox, QFileDialog
+    QScrollArea, QMessageBox, QSizePolicy, QCheckBox, QFileDialog, QDialog
 )
 from PySide6.QtCore import Qt
 
 from models.settings_model import get_all_settings, set_setting
 from models.user_model import update_password, update_user
+from models.brand_model import get_all_brands, insert_brand, update_brand, delete_brand, set_brand_active
 from utils.session import session
 from utils.config import DB_PATH, BACKUPS_DIR
 from utils.theme import apply_theme, current_theme
@@ -138,6 +139,9 @@ class SettingsPage(QWidget):
         inv_save.clicked.connect(self._save_invoice)
         iv_layout.addWidget(inv_save, alignment=Qt.AlignLeft)
         body_layout.addWidget(inv_card)
+
+        brand_card = self._build_brands_card()
+        body_layout.addWidget(brand_card)
 
         # ── Change Password card
         pw_card = self._card()
@@ -339,6 +343,112 @@ class SettingsPage(QWidget):
         self.light_btn.setStyleSheet(active  if t == "light" else inactive)
         self.dark_btn.setStyleSheet( active  if t == "dark"  else inactive)
 
+    def _build_brands_card(self) -> QFrame:
+        card = self._card()
+        layout = QVBoxLayout(card)
+        layout.setSpacing(12)
+        layout.addWidget(_section_header("🏷️  Brand Management"))
+
+        from PySide6.QtWidgets import QTableWidget, QHeaderView, QAbstractItemView
+        self.brand_table = QTableWidget()
+        self.brand_table.setColumnCount(3)
+        self.brand_table.setHorizontalHeaderLabels(["Name", "Status", "Created"])
+        self.brand_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.brand_table.verticalHeader().setVisible(False)
+        self.brand_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.brand_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.brand_table.setAlternatingRowColors(True)
+        self.brand_table.setShowGrid(False)
+        self.brand_table.setFixedHeight(220)
+        self.brand_table.setStyleSheet(
+            "QTableWidget{border:none;font-size:12px;background:white;"
+            "alternate-background-color:#f8fafc;}"
+            "QHeaderView::section{background:#f1f5f9;color:#475569;"
+            "font-weight:700;font-size:11px;padding:6px;border:none;}"
+            "QTableWidget::item{padding:6px;color:#1e293b;"
+            "border-bottom:1px solid #f1f5f9;}")
+        layout.addWidget(self.brand_table)
+
+        btn_row = QHBoxLayout()
+        add_btn = QPushButton("➕  Add Brand")
+        edit_btn = QPushButton("✏  Edit")
+        del_btn = QPushButton("🗑  Delete")
+        toggle_btn = QPushButton("Enable / Disable")
+        for btn in (add_btn, edit_btn, del_btn, toggle_btn):
+            btn.setStyleSheet(_GREEN if btn is add_btn else _GRAY)
+            btn.setFixedHeight(34)
+        add_btn.clicked.connect(self._add_brand)
+        edit_btn.clicked.connect(self._edit_brand)
+        del_btn.clicked.connect(self._delete_brand)
+        toggle_btn.clicked.connect(self._toggle_brand)
+        btn_row.addWidget(add_btn)
+        btn_row.addWidget(edit_btn)
+        btn_row.addWidget(del_btn)
+        btn_row.addWidget(toggle_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        self._load_brands_table()
+        return card
+
+    def _load_brands_table(self):
+        if not hasattr(self, "brand_table"):
+            return
+        from PySide6.QtWidgets import QTableWidgetItem
+        brands = get_all_brands(include_inactive=True)
+        self.brand_table.setRowCount(len(brands))
+        for row, brand in enumerate(brands):
+            cells = [
+                brand.get("name", ""),
+                "Active" if brand.get("is_active", 1) else "Disabled",
+                brand.get("created_at", ""),
+            ]
+            for col, text in enumerate(cells):
+                self.brand_table.setItem(row, col, QTableWidgetItem(str(text)))
+
+    def _selected_brand(self):
+        row = self.brand_table.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Select Row", "Please select a brand first.")
+            return None
+        name = self.brand_table.item(row, 0).text()
+        return next((b for b in get_all_brands(include_inactive=True) if b["name"] == name), None)
+
+    def _add_brand(self):
+        dlg = BrandDialog()
+        if dlg.exec():
+            name = dlg.name_input.text().strip()
+            if name:
+                insert_brand(name)
+            self._load_brands_table()
+
+    def _edit_brand(self):
+        brand = self._selected_brand()
+        if not brand:
+            return
+        dlg = BrandDialog(brand["name"])
+        if dlg.exec():
+            name = dlg.name_input.text().strip()
+            if name:
+                update_brand(brand["id"], name)
+            self._load_brands_table()
+
+    def _delete_brand(self):
+        brand = self._selected_brand()
+        if not brand:
+            return
+        if QMessageBox.question(self, "Confirm", f"Disable brand '{brand['name']}'?",
+                                QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+            delete_brand(brand["id"])
+            self._load_brands_table()
+
+    def _toggle_brand(self):
+        brand = self._selected_brand()
+        if not brand:
+            return
+        set_brand_active(brand["id"], not bool(brand.get("is_active", 1)))
+        self._load_brands_table()
+
     def _load_log(self):
         from database.connection import get_connection
         from PySide6.QtWidgets import QTableWidgetItem
@@ -459,3 +569,31 @@ class SettingsPage(QWidget):
         self.new_pass_i.clear()
         self.conf_pass_i.clear()
         QMessageBox.information(self, "Success", "Password changed successfully.")
+
+
+class BrandDialog(QDialog):
+
+    def __init__(self, name: str = ""):
+        super().__init__()
+        self.setWindowTitle("Brand")
+        self.resize(360, 140)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 16, 18, 16)
+        root.setSpacing(10)
+        root.addWidget(QLabel("Brand Name:"))
+        self.name_input = QLineEdit()
+        self.name_input.setStyleSheet(_FS)
+        self.name_input.setText(name)
+        root.addWidget(self.name_input)
+
+        btn_row = QHBoxLayout()
+        cancel = QPushButton("Cancel")
+        save = QPushButton("Save")
+        cancel.setStyleSheet(_GRAY)
+        save.setStyleSheet(_GREEN)
+        cancel.clicked.connect(self.reject)
+        save.clicked.connect(self.accept)
+        btn_row.addWidget(cancel)
+        btn_row.addStretch()
+        btn_row.addWidget(save)
+        root.addLayout(btn_row)

@@ -12,7 +12,7 @@ from PySide6.QtGui import QColor
 
 from database.connection import get_connection
 from utils.helpers import format_currency, format_datetime, format_date
-from utils.config import EXPORTS_DIR
+from utils.config import EXPORTS_DIR, PAYMENT_METHODS
 
 _GREEN = ("QPushButton{background:#2e7d32;color:white;border-radius:8px;"
           "padding:9px 20px;font-size:13px;font-weight:700;border:none;}"
@@ -150,8 +150,8 @@ class ReportsPage(QWidget):
             de.setStyleSheet(_DE_STYLE)
             de.setFixedWidth(140)
         self.s_method = QComboBox()
-        self.s_method.addItems(["All Methods", "Cash", "Bank Transfer",
-                                "EasyPaisa", "JazzCash"])
+        self.s_method.addItem("All Methods")
+        self.s_method.addItems(PAYMENT_METHODS)
         self.s_method.setStyleSheet(
             "QComboBox{border:1.5px solid #e2e8f0;border-radius:7px;"
             "padding:7px 10px;font-size:13px;background:white;}")
@@ -651,7 +651,8 @@ class ReportsPage(QWidget):
         conn = get_connection()
         rows = conn.execute(
             "SELECT id,name,category,quantity,low_stock_threshold,"
-            "purchase_price,sale_price,expiry_date FROM products WHERE is_active=1"
+            "purchase_price,sale_price,expiry_date FROM products "
+            "WHERE is_active=1 AND COALESCE(secret_product,0)=0"
         ).fetchall()
         conn.close()
         self._inv_data = []

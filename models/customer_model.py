@@ -1,13 +1,47 @@
 from database.connection import get_connection
+from models.payment_model import record_customer_payment
 
 
 def get_all_customers():
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM customers WHERE is_active=1 ORDER BY name"
+        """
+        SELECT c.*,
+               COALESCE((
+                   SELECT SUM(amount_paid)
+                   FROM payments
+                   WHERE customer_id = c.id
+               ), 0) AS total_paid_calc,
+               COALESCE((
+                   SELECT SUM(remaining_amount)
+                   FROM sales
+                   WHERE customer_id = c.id AND is_deleted = 0
+               ), 0) AS total_pending_calc,
+               (
+                   SELECT MAX(sale_date)
+                   FROM sales
+                   WHERE customer_id = c.id AND is_deleted = 0
+               ) AS last_sale_calc
+        FROM customers c
+        WHERE c.is_active=1
+        ORDER BY c.name
+        """
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    customers = []
+    for r in rows:
+        row = dict(r)
+        paid_calc = row.pop("total_paid_calc", None)
+        pend_calc = row.pop("total_pending_calc", None)
+        last_calc = row.pop("last_sale_calc", None)
+        if paid_calc is not None:
+            row["total_paid"] = paid_calc
+        if pend_calc is not None:
+            row["total_pending"] = pend_calc
+        if last_calc is not None:
+            row["last_purchase_date"] = last_calc
+        customers.append(row)
+    return customers
 
 
 def get_customer_by_id(customer_id: int):
@@ -53,10 +87,15 @@ def update_customer_balance(customer_id: int, paid: float, pending: float):
     conn.execute("""
         UPDATE customers SET
             total_paid = total_paid + ?,
-            total_pending = total_pending + ?,
+            total_pending = MAX(total_pending - ?, 0),
             last_purchase_date = datetime('now','localtime'),
             updated_at = datetime('now','localtime')
         WHERE id = ?
     """, (paid, pending, customer_id))
     conn.commit()
     conn.close()
+
+
+def apply_customer_payment(customer_id: int, amount: float, payment_method: str,
+                           notes: str = "", recorded_by=None):
+    return record_customer_payment(customer_id, amount, payment_method, notes, recorded_by)

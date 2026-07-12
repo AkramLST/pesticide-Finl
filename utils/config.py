@@ -73,30 +73,42 @@ PAYMENT_METHODS = [
     "Bank Transfer",
     "EasyPaisa",
     "JazzCash",
+    "Cheque",
+    "Other",
 ]
 
 # =========================
 # Product Data
 # =========================
 
-PRODUCT_CATEGORIES = [
-    "Insecticide",
-    "Herbicide",
-    "Fungicide",
-    "Rodenticide",
-    "Fertilizer",
-    "Other",
+PRODUCT_MAIN_CATEGORIES = ["Seeds", "Fertilizers", "Pesticides"]
+
+PRODUCT_SUBCATEGORIES = {
+    "Seeds": [
+        "Wheat", "Corn", "Rice", "Cotton", "Sunflower", "Mustard",
+        "Vegetable Seeds", "Fruit Seeds", "Bajra", "Mung Bean", "Sesame",
+        "Barley", "Canola", "Fodder Seeds", "Hybrid Seeds", "Other",
+    ],
+    "Fertilizers": [
+        "Urea", "DAP", "NPK", "SOP", "MOP", "Ammonium Sulphate",
+        "Zinc Fertilizer", "Micronutrients", "Compost", "Borax",
+        "Gypsum", "Calcium Nitrate", "Other",
+    ],
+    "Pesticides": [
+        "Insecticide", "Herbicide", "Fungicide", "Rodenticide",
+        "Termiticide", "Plant Growth Regulator", "Bio Pesticide",
+        "Acaricide", "Nematicide", "Molluscicide", "Other",
+    ],
+}
+
+PRODUCT_CATEGORIES = PRODUCT_MAIN_CATEGORIES
+
+DEFAULT_BRANDS = [
+    "Bayer", "Syngenta", "FMC", "Corteva", "UPL", "Adama",
+    "Nufarm", "Arysta", "Sygenta", "BASF", "Other",
 ]
 
-PRODUCT_BRANDS = [
-    "Bayer",
-    "Syngenta",
-    "FMC",
-    "Corteva",
-    "UPL",
-    "Adama",
-    "Other",
-]
+PRODUCT_BRANDS = DEFAULT_BRANDS
 
 FORMULATIONS = [
     "Liquid",
