@@ -38,6 +38,32 @@ def _upgrade_existing_tables(conn):
     for col, defn in product_upgrades:
         _add_column_if_missing(conn, "products", col, defn)
 
+    sales_upgrades = [
+        ("updated_at", "TEXT"),
+    ]
+    for col, defn in sales_upgrades:
+        _add_column_if_missing(conn, "sales", col, defn)
+
+    customer_upgrades = [
+        ("opening_balance", "REAL NOT NULL DEFAULT 0"),
+        ("updated_at",      "TEXT"),
+    ]
+    for col, defn in customer_upgrades:
+        _add_column_if_missing(conn, "customers", col, defn)
+
+    supplier_upgrades = [
+        ("opening_balance", "REAL NOT NULL DEFAULT 0"),
+        ("updated_at",      "TEXT"),
+    ]
+    for col, defn in supplier_upgrades:
+        _add_column_if_missing(conn, "suppliers", col, defn)
+
+    brand_upgrades = [
+        ("updated_at", "TEXT"),
+    ]
+    for col, defn in brand_upgrades:
+        _add_column_if_missing(conn, "brands", col, defn)
+
     payment_upgrades = [
         ("remaining_balance", "REAL NOT NULL DEFAULT 0"),
         ("recorded_by",       "INTEGER"),
@@ -45,6 +71,13 @@ def _upgrade_existing_tables(conn):
     ]
     for col, defn in payment_upgrades:
         _add_column_if_missing(conn, "payments", col, defn)
+
+    supplier_payment_upgrades = [
+        ("recorded_by", "INTEGER"),
+        ("created_at",  "TEXT"),
+    ]
+    for col, defn in supplier_payment_upgrades:
+        _add_column_if_missing(conn, "supplier_payments", col, defn)
 
     conn.commit()
 
@@ -76,6 +109,7 @@ def run_migrations():
         email               TEXT,
         address             TEXT,
         notes               TEXT,
+        opening_balance     REAL    NOT NULL DEFAULT 0,
         total_transactions  REAL    NOT NULL DEFAULT 0,
         is_active           INTEGER NOT NULL DEFAULT 1,
         created_at          TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
@@ -121,6 +155,7 @@ def run_migrations():
         phone               TEXT,
         address             TEXT,
         notes               TEXT,
+        opening_balance     REAL    NOT NULL DEFAULT 0,
         total_paid          REAL    NOT NULL DEFAULT 0,
         total_pending       REAL    NOT NULL DEFAULT 0,
         last_purchase_date  TEXT,
@@ -142,7 +177,8 @@ def run_migrations():
         payment_method   TEXT,
         notes            TEXT,
         is_deleted       INTEGER NOT NULL DEFAULT 0,
-        created_at       TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+        created_at       TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+        updated_at       TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
     );
 
     CREATE TABLE IF NOT EXISTS sale_items (
@@ -166,6 +202,17 @@ def run_migrations():
         remaining_balance REAL NOT NULL DEFAULT 0,
         recorded_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
         created_at      TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS supplier_payments (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        supplier_id    INTEGER REFERENCES suppliers(id) ON DELETE CASCADE,
+        amount_paid    REAL    NOT NULL DEFAULT 0,
+        payment_method TEXT,
+        payment_date   TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+        notes          TEXT,
+        recorded_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at     TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
     );
 
     CREATE TABLE IF NOT EXISTS invoices (

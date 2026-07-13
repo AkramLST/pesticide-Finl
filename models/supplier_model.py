@@ -21,9 +21,16 @@ def insert_supplier(data: dict) -> int:
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
-        INSERT INTO suppliers (name, phone, email, address, notes)
-        VALUES (:name, :phone, :email, :address, :notes)
-    """, data)
+        INSERT INTO suppliers (name, phone, email, address, notes, opening_balance)
+        VALUES (:name, :phone, :email, :address, :notes, :opening_balance)
+    """, {
+        "name": data.get("name", ""),
+        "phone": data.get("phone", ""),
+        "email": data.get("email", ""),
+        "address": data.get("address", ""),
+        "notes": data.get("notes", ""),
+        "opening_balance": data.get("opening_balance", 0) or 0,
+    })
     new_id = c.lastrowid
     conn.commit()
     conn.close()
@@ -34,9 +41,18 @@ def update_supplier(supplier_id: int, data: dict):
     conn = get_connection()
     conn.execute("""
         UPDATE suppliers SET name=:name, phone=:phone, email=:email,
-            address=:address, notes=:notes, updated_at=datetime('now','localtime')
+            address=:address, notes=:notes, opening_balance=:opening_balance,
+            updated_at=datetime('now','localtime')
         WHERE id=:id
-    """, {**data, "id": supplier_id})
+    """, {
+        "id": supplier_id,
+        "name": data.get("name", ""),
+        "phone": data.get("phone", ""),
+        "email": data.get("email", ""),
+        "address": data.get("address", ""),
+        "notes": data.get("notes", ""),
+        "opening_balance": data.get("opening_balance", 0) or 0,
+    })
     conn.commit()
     conn.close()
 

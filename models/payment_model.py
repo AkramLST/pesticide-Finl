@@ -70,6 +70,7 @@ def _recalc_customer(conn, customer_id: int):
     row = conn.execute(
         """
         SELECT
+            COALESCE((SELECT opening_balance FROM customers WHERE id = ?), 0) AS opening_balance,
             COALESCE((
                 SELECT SUM(amount_paid)
                 FROM payments
@@ -85,8 +86,19 @@ def _recalc_customer(conn, customer_id: int):
     ).fetchone()
     if not row:
         return None
+    opening_balance = float(row["opening_balance"] or 0)
     paid = float(row["total_paid"] or 0)
-    pending = float(row["total_pending"] or 0)
+    pending_sales = float(row["total_pending"] or 0)
+    opening_paid_row = conn.execute(
+        """
+        SELECT COALESCE(SUM(amount_paid), 0) AS total_paid
+        FROM payments
+        WHERE customer_id = ? AND sale_id IS NULL
+        """,
+        (customer_id,),
+    ).fetchone()
+    opening_paid = float(opening_paid_row["total_paid"] or 0) if opening_paid_row else 0.0
+    pending = max(0.0, opening_balance - opening_paid) + pending_sales
     conn.execute(
         """
         UPDATE customers
@@ -224,8 +236,100 @@ def record_customer_payment(
             allocations.append({"sale_id": sale["id"], "amount": applied})
             remaining_to_apply -= applied
 
+        if remaining_to_apply > 0:
+            conn.execute(
+                """
+                INSERT INTO payments
+                    (sale_id, customer_id, amount_paid, payment_method,
+                     payment_date, notes, remaining_balance, recorded_by, created_at)
+                VALUES
+                    (NULL, ?, ?, ?, datetime('now','localtime'), ?, 0, ?, datetime('now','localtime'))
+                """,
+                (customer_id, remaining_to_apply, payment_method, notes, recorded_by),
+            )
+            allocations.append({"sale_id": None, "amount": remaining_to_apply})
+
         customer_state = _recalc_customer(conn, customer_id)
         conn.commit()
         return {"allocations": allocations, "customer_state": customer_state}
     finally:
         conn.close()
+
+
+def _recalc_supplier(conn, supplier_id: int):
+    row = conn.execute(
+        """
+        SELECT
+            COALESCE((SELECT opening_balance FROM suppliers WHERE id = ?), 0) AS opening_balance,
+            COALESCE((
+                SELECT SUM(amount_paid)
+                FROM supplier_payments
+                WHERE supplier_id = ?
+            ), 0) AS total_paid
+        """,
+        (supplier_id, supplier_id),
+    ).fetchone()
+    if not row:
+        return None
+    opening_balance = float(row["opening_balance"] or 0)
+    total_paid = float(row["total_paid"] or 0)
+    pending = max(0.0, opening_balance - total_paid)
+    conn.execute(
+        """
+        UPDATE suppliers
+        SET total_transactions = ?, updated_at = datetime('now','localtime')
+        WHERE id = ?
+        """,
+        (pending, supplier_id),
+    )
+    return {"total_paid": total_paid, "total_pending": pending}
+
+
+def record_supplier_payment(
+    supplier_id: int,
+    amount: float,
+    payment_method: str,
+    notes: str = "",
+    recorded_by: Optional[int] = None,
+):
+    conn = get_connection()
+    try:
+        amount = float(amount or 0)
+        if amount <= 0:
+            raise ValueError("Payment amount must be greater than zero.")
+
+        conn.execute(
+            """
+            INSERT INTO supplier_payments
+                (supplier_id, amount_paid, payment_method,
+                 payment_date, notes, recorded_by, created_at)
+            VALUES
+                (?, ?, ?, datetime('now','localtime'), ?, ?, datetime('now','localtime'))
+            """,
+            (supplier_id, amount, payment_method, notes, recorded_by),
+        )
+        state = _recalc_supplier(conn, supplier_id)
+        conn.commit()
+        return state
+    finally:
+        conn.close()
+
+
+def get_supplier_payment_summary():
+    conn = get_connection()
+    row = conn.execute(
+        """
+        SELECT
+            COALESCE(SUM(opening_balance), 0) AS opening_total,
+            COALESCE((SELECT SUM(amount_paid) FROM supplier_payments), 0) AS paid_total
+        FROM suppliers
+        WHERE is_active = 1
+        """
+    ).fetchone()
+    conn.close()
+    opening_total = float(row["opening_total"] or 0) if row else 0.0
+    paid_total = float(row["paid_total"] or 0) if row else 0.0
+    return {
+        "total_paid": paid_total,
+        "total_pending": max(0.0, opening_total - paid_total),
+    }

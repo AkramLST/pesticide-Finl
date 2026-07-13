@@ -1,10 +1,11 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QLineEdit, QTextEdit,
     QPushButton, QComboBox, QFileDialog, QFormLayout,
-    QMessageBox, QSpinBox, QDoubleSpinBox, QHBoxLayout, QCheckBox
+    QMessageBox, QSpinBox, QDoubleSpinBox, QHBoxLayout, QCheckBox,
+    QDateEdit
 )
 from PySide6.QtGui import QPixmap
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QDate
 
 from models.product_model import insert_product
 from models.supplier_model import get_all_suppliers
@@ -74,11 +75,8 @@ class AddProductDialog(QDialog):
 
         self.secret_checkbox = QCheckBox("Mark as secret product")
 
-        self.mfg_input = QLineEdit()
-        self.mfg_input.setPlaceholderText("YYYY-MM-DD")
-
-        self.expiry_input = QLineEdit()
-        self.expiry_input.setPlaceholderText("YYYY-MM-DD")
+        self.mfg_input = self._make_date_input()
+        self.expiry_input = self._make_date_input()
 
         img_row = QHBoxLayout()
         self.image_btn = QPushButton("Upload Image")
@@ -128,6 +126,16 @@ class AddProductDialog(QDialog):
             pix = QPixmap(path).scaled(58, 58, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.image_preview.setPixmap(pix)
 
+    @staticmethod
+    def _make_date_input() -> QDateEdit:
+        widget = QDateEdit()
+        widget.setCalendarPopup(True)
+        widget.setDisplayFormat("yyyy-MM-dd")
+        widget.setDateRange(QDate(1900, 1, 1), QDate.currentDate().addYears(20))
+        widget.setSpecialValueText("Select date")
+        widget.setDate(QDate(1900, 1, 1))
+        return widget
+
     def _load_brands(self):
         self.brand_combo.clear()
         brands = get_all_brands()
@@ -167,8 +175,8 @@ class AddProductDialog(QDialog):
             "unit_type":           "",
             "weight":              self.weight_input.text(),
             "supplier_id":         self.supplier_combo.currentData(),
-            "manufacturing_date":  self.mfg_input.text().strip() or None,
-            "expiry_date":         self.expiry_input.text().strip() or None,
+            "manufacturing_date":  None if self.mfg_input.date() == QDate(1900, 1, 1) else self.mfg_input.date().toString("yyyy-MM-dd"),
+            "expiry_date":         None if self.expiry_input.date() == QDate(1900, 1, 1) else self.expiry_input.date().toString("yyyy-MM-dd"),
             "low_stock_threshold": self.low_stock_input.value(),
             "secret_product":      1 if self.secret_checkbox.isChecked() else 0,
             "image":               self.image_path,

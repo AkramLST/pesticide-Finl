@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from PySide6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QFrame,
     QSizePolicy, QGraphicsDropShadowEffect, QScrollArea,
@@ -7,28 +9,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from datetime import datetime, timedelta
-
-from models.product_model import get_all_products, get_low_stock_products
-from models.product_model import get_category_metrics
-from models.sale_model import get_sales_summary, get_all_sales, get_weekly_sales, get_pending_sales
-from models.customer_model import get_all_customers
-from models.supplier_model import get_all_suppliers
+from database.connection import get_connection
 from utils.helpers import format_currency, format_datetime
-
-# ── Stat card definitions: (title, icon, accent_color, bg_gradient)
-_CARDS = [
-    ("Total Products",    "📦", "#3b82f6", "#eff6ff", "#dbeafe"),
-    ("Total Customers",   "👥", "#10b981", "#f0fdf4", "#d1fae5"),
-    ("Total Suppliers",   "🚚", "#8b5cf6", "#f5f3ff", "#ede9fe"),
-    ("Total Revenue",     "💰", "#f59e0b", "#fffbeb", "#fef3c7"),
-    ("Pending Payments",  "⏳", "#ef4444", "#fef2f2", "#fee2e2"),
-    ("Low Stock Items",   "⚠",  "#f97316", "#fff7ed", "#ffedd5"),
-]
 
 
 class DashboardPage(QWidget):
@@ -36,505 +18,505 @@ class DashboardPage(QWidget):
     def __init__(self):
         super().__init__()
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setStyleSheet("background-color: #f1f5f9;")
+        self.setStyleSheet("background:#f1f5f9;")
+        self._cards = []
         self._build_ui()
+        self.refresh()
 
-    # ──────────────────────────────────────────────────────
+    def showEvent(self, event):
+        super().showEvent(event)
+        if hasattr(self, "_stats_ready"):
+            self.refresh()
+
     def _build_ui(self):
-        stats = self._load_stats()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        header = QFrame()
+        header.setFixedHeight(64)
+        header.setAttribute(Qt.WA_StyledBackground, True)
+        header.setStyleSheet("QFrame{background:white;border-bottom:1.5px solid #e2e8f0;}")
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(24, 0, 24, 0)
+
+        title = QLabel("Dashboard")
+        title.setStyleSheet("font-size:20px;font-weight:700;color:#0f172a;")
+
+        refresh_btn = QPushButton("↻  Refresh")
+        refresh_btn.setFixedSize(110, 36)
+        refresh_btn.setStyleSheet(
+            "QPushButton{background:#2e7d32;color:white;border-radius:8px;"
+            "font-size:13px;font-weight:600;border:none;}"
+            "QPushButton:hover{background:#1b5e20;}"
+        )
+        refresh_btn.clicked.connect(self.refresh)
+
+        hl.addWidget(title)
+        hl.addStretch()
+        hl.addWidget(refresh_btn)
+        outer.addWidget(header)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setStyleSheet("background: #f1f5f9; border:none;")
+        scroll.setStyleSheet("background:#f1f5f9;border:none;")
 
-        content = QWidget()
-        content.setStyleSheet("background: #f1f5f9;")
-        root = QVBoxLayout(content)
-        root.setContentsMargins(20, 16, 20, 20)
-        root.setSpacing(16)
+        self.content = QWidget()
+        self.content.setStyleSheet("background:#f1f5f9;")
+        self.root = QVBoxLayout(self.content)
+        self.root.setContentsMargins(20, 16, 20, 20)
+        self.root.setSpacing(16)
 
-        # ── Header
-        header = QHBoxLayout()
-        page_title = QLabel("Dashboard")
-        page_title.setStyleSheet("font-size:26px; font-weight:700; color:#0f172a;")
-        refresh_btn = QPushButton("↻  Refresh")
-        refresh_btn.setFixedSize(110, 36)
-        refresh_btn.setStyleSheet("""
-            QPushButton { background:#2e7d32; color:white; border-radius:8px;
-                          font-size:13px; font-weight:600; border:none; }
-            QPushButton:hover { background:#1b5e20; }
-        """)
-        refresh_btn.clicked.connect(self._refresh)
-        header.addWidget(page_title)
-        header.addStretch()
-        header.addWidget(refresh_btn)
-        root.addLayout(header)
+        self._low_stock_banner = self._make_banner()
+        self.root.addWidget(self._low_stock_banner)
 
-        # ── Low-stock banner
-        low_stock_items = get_low_stock_products()
-        if low_stock_items:
-            banner = QFrame()
-            banner.setStyleSheet("""
-                QFrame { background:#fef3c7; border:1.5px solid #f59e0b;
-                         border-radius:10px; padding:4px; }
-            """)
-            b_layout = QHBoxLayout(banner)
-            b_layout.setContentsMargins(14, 8, 14, 8)
-            icon = QLabel("⚠")
-            icon.setStyleSheet("font-size:18px;")
-            msg = QLabel(
-                f"<b>{len(low_stock_items)} product(s)</b> are low on stock: "
-                + ", ".join(p["name"] for p in low_stock_items[:5])
-                + ("…" if len(low_stock_items) > 5 else "")
-            )
-            msg.setStyleSheet("font-size:13px; color:#92400e;")
-            b_layout.addWidget(icon)
-            b_layout.addWidget(msg)
-            b_layout.addStretch()
-            root.addWidget(banner)
+        self.cards_grid = QGridLayout()
+        self.cards_grid.setSpacing(12)
+        self.root.addLayout(self.cards_grid)
 
-        # ── Stat Cards grid (2 rows x 3 cols — responsive)
-        self._card_widgets = {}
-        cards_grid = QGridLayout()
-        cards_grid.setSpacing(12)
-        values = [
-            str(stats["products"]),
-            str(stats["customers"]),
-            str(stats["suppliers"]),
-            stats["revenue"],
-            stats["pending"],
-            str(stats["low_stock"]),
-        ]
-        for i, ((title, icon, accent, bg1, bg2), value) in enumerate(zip(_CARDS, values)):
-            cards_grid.addWidget(
-                self._make_stat_card(title, icon, value, accent, bg1, bg2),
-                i // 3, i % 3
-            )
-        root.addLayout(cards_grid)
+        self.overview_card, self.overview_layout = self._make_section("Business Overview")
+        self.root.addWidget(self.overview_card)
 
-        category_panel = self._make_category_overview_panel()
-        root.addWidget(category_panel)
-
-        # ── Charts row
         charts_row = QHBoxLayout()
         charts_row.setSpacing(14)
-        weekly = self._make_weekly_sales_chart()
-        pie    = self._make_inventory_pie_chart()
-        weekly.setMaximumHeight(280)
-        pie.setMaximumHeight(280)
-        charts_row.addWidget(weekly, stretch=3)
-        charts_row.addWidget(pie,    stretch=2)
-        root.addLayout(charts_row)
+        self.inventory_card, self.inventory_layout = self._make_section("Inventory Snapshot")
+        self.recent_card, self.recent_layout = self._make_section("Recent Sales")
+        charts_row.addWidget(self.inventory_card, stretch=2)
+        charts_row.addWidget(self.recent_card, stretch=3)
+        self.root.addLayout(charts_row)
 
-        # ── Bottom section: Recent Sales + Low Stock table
         bottom = QHBoxLayout()
         bottom.setSpacing(14)
-        recent = self._make_recent_sales_panel()
-        low    = self._make_low_stock_panel(low_stock_items)
-        recent.setMaximumHeight(280)
-        low.setMaximumHeight(280)
-        bottom.addWidget(recent, stretch=3)
-        bottom.addWidget(low,    stretch=2)
-        root.addLayout(bottom)
+        self.customers_card, self.customers_layout = self._make_section("Customer Balances")
+        self.suppliers_card, self.suppliers_layout = self._make_section("Supplier Balances")
+        bottom.addWidget(self.customers_card, stretch=1)
+        bottom.addWidget(self.suppliers_card, stretch=1)
+        self.root.addLayout(bottom)
 
-        # ── Pending payments panel
-        pend_panel = self._make_pending_payments_panel()
-        pend_panel.setMaximumHeight(280)
-        root.addWidget(pend_panel)
-
-        root.addStretch()
-        scroll.setWidget(content)
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        self.root.addStretch()
+        scroll.setWidget(self.content)
         outer.addWidget(scroll)
 
-    # ──────────────────────────────────────────────────────
-    def _make_stat_card(self, title, icon, value, accent, bg1, bg2) -> QFrame:
+        self._stats_ready = True
+
+    def _make_banner(self):
+        banner = QFrame()
+        banner.setAttribute(Qt.WA_StyledBackground, True)
+        banner.setStyleSheet(
+            "QFrame{background:#fffbeb;border:1.5px solid #f59e0b;border-radius:10px;}"
+        )
+        layout = QHBoxLayout(banner)
+        layout.setContentsMargins(14, 8, 14, 8)
+        self.banner_label = QLabel("Low stock items will appear here.")
+        self.banner_label.setStyleSheet("font-size:13px;color:#92400e;")
+        layout.addWidget(self.banner_label)
+        layout.addStretch()
+        return banner
+
+    def _make_section(self, title: str):
+        card = QFrame()
+        card.setAttribute(Qt.WA_StyledBackground, True)
+        card.setStyleSheet("QFrame{background:white;border-radius:14px;border:1px solid #e2e8f0;}")
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(16)
+        shadow.setOffset(0, 4)
+        shadow.setColor(QColor(0, 0, 0, 22))
+        card.setGraphicsEffect(shadow)
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+
+        heading = QLabel(title)
+        heading.setStyleSheet("font-size:15px;font-weight:700;color:#0f172a;")
+        layout.addWidget(heading)
+        return card, layout
+
+    def _make_card(self, title: str, value: str, accent: str, bg1: str, bg2: str):
         card = QFrame()
         card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        card.setFixedHeight(96)
+        card.setFixedHeight(98)
         card.setAttribute(Qt.WA_StyledBackground, True)
-        card.setStyleSheet(f"""
-            QFrame {{
-                background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
-                    stop:0 {bg1}, stop:1 {bg2});
-                border-radius: 14px;
-                border: 1.5px solid {accent}33;
-            }}
-        """)
+        card.setStyleSheet(
+            f"QFrame{{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,"
+            f"stop:0 {bg1}, stop:1 {bg2});border-radius:14px;border:1.5px solid {accent}33;}}"
+        )
 
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(16)
         shadow.setOffset(0, 4)
-        shadow.setColor(QColor(0, 0, 0, 35))
+        shadow.setColor(QColor(0, 0, 0, 28))
         card.setGraphicsEffect(shadow)
 
         layout = QHBoxLayout(card)
         layout.setContentsMargins(18, 14, 18, 14)
         layout.setSpacing(14)
 
-        icon_lbl = QLabel(icon)
+        icon_lbl = QLabel("●")
         icon_lbl.setFixedSize(48, 48)
         icon_lbl.setAlignment(Qt.AlignCenter)
-        icon_lbl.setStyleSheet(f"""
-            background:{accent}22; border-radius:12px;
-            font-size:22px;
-        """)
+        icon_lbl.setStyleSheet(f"background:{accent}22;border-radius:12px;color:{accent};font-size:22px;")
 
         text_col = QVBoxLayout()
         text_col.setSpacing(2)
         val_lbl = QLabel(value)
-        val_lbl.setStyleSheet(f"font-size:24px; font-weight:800; color:{accent};")
+        val_lbl.setStyleSheet(f"font-size:24px;font-weight:800;color:{accent};")
         ttl_lbl = QLabel(title)
-        ttl_lbl.setStyleSheet("font-size:12px; color:#64748b; font-weight:500;")
+        ttl_lbl.setStyleSheet("font-size:12px;color:#64748b;font-weight:500;")
         text_col.addWidget(val_lbl)
         text_col.addWidget(ttl_lbl)
 
         layout.addWidget(icon_lbl)
         layout.addLayout(text_col)
         layout.addStretch()
+        self._cards.append((val_lbl, title))
         return card
 
-    # ──────────────────────────────────────────────────────
-    def _make_recent_sales_panel(self) -> QFrame:
-        panel = QFrame()
-        panel.setAttribute(Qt.WA_StyledBackground, True)
-        panel.setStyleSheet("""
-            QFrame { background:white; border-radius:14px;
-                     border:1px solid #e2e8f0; }
-        """)
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(16)
-        shadow.setOffset(0, 4)
-        shadow.setColor(QColor(0, 0, 0, 25))
-        panel.setGraphicsEffect(shadow)
+    def _query_one(self, sql: str, params=()):
+        conn = get_connection()
+        try:
+            row = conn.execute(sql, params).fetchone()
+            return dict(row) if row else {}
+        finally:
+            conn.close()
 
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(12)
+    def _query_all(self, sql: str, params=()):
+        conn = get_connection()
+        try:
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
 
-        hdr = QHBoxLayout()
-        title = QLabel("🛒  Recent Sales")
-        title.setStyleSheet("font-size:15px; font-weight:700; color:#0f172a;")
-        hdr.addWidget(title)
-        hdr.addStretch()
-        layout.addLayout(hdr)
+    def refresh(self):
+        stats = self._load_stats()
+        self._render_banner(stats["low_stock"])
+        self._render_cards(stats)
+        self._render_overview(stats)
+        self._render_inventory(stats)
+        self._render_recent_sales(stats["recent_sales"])
+        self._render_customer_balances(stats["customers_due"])
+        self._render_supplier_balances(stats["suppliers_due"])
+
+    def _render_banner(self, low_stock):
+        if low_stock:
+            names = ", ".join(item["name"] for item in low_stock[:5])
+            suffix = "..." if len(low_stock) > 5 else ""
+            self.banner_label.setText(
+                f"<b>{len(low_stock)} product(s)</b> are low on stock: {names}{suffix}"
+            )
+        else:
+            self.banner_label.setText("No low-stock alerts right now.")
+
+    def _load_stats(self):
+        inventory = self._query_one(
+            """
+            SELECT
+                COALESCE(COUNT(*), 0) AS product_count,
+                COALESCE(SUM(CASE WHEN quantity > 0 THEN 1 ELSE 0 END), 0) AS in_stock_products,
+                COALESCE(SUM(quantity), 0) AS total_quantity,
+                COALESCE(SUM(quantity * purchase_price), 0) AS inventory_value,
+                COALESCE(SUM(CASE WHEN quantity > 0 AND quantity <= low_stock_threshold THEN 1 ELSE 0 END), 0) AS low_stock
+            FROM products
+            WHERE is_active = 1
+            """
+        )
+        sales_items = self._query_one(
+            """
+            SELECT
+                COALESCE(SUM(si.quantity), 0) AS total_sold_qty,
+                COALESCE(SUM(si.subtotal), 0) AS total_sold_value
+            FROM sale_items si
+            JOIN sales s ON s.id = si.sale_id
+            WHERE s.is_deleted = 0
+            """
+        )
+        sales_totals = self._query_one(
+            """
+            SELECT
+                COALESCE(SUM(total_amount), 0) AS total_revenue,
+                COALESCE(SUM(remaining_amount), 0) AS total_pending
+            FROM sales
+            WHERE is_deleted = 0
+            """
+        )
+        payments = self._query_one(
+            """
+            SELECT
+                COALESCE(SUM(CASE WHEN sale_id IS NOT NULL THEN amount_paid ELSE 0 END), 0) AS customer_received,
+                COALESCE(SUM(CASE WHEN sale_id IS NULL THEN amount_paid ELSE 0 END), 0) AS opening_received
+            FROM payments
+            """
+        )
+        customers_due = self._query_all(
+            """
+            SELECT
+                c.id,
+                c.name,
+                COALESCE(c.opening_balance, 0) AS opening_balance,
+                COALESCE((SELECT SUM(amount_paid) FROM payments p WHERE p.customer_id = c.id), 0) AS total_paid,
+                COALESCE((SELECT SUM(amount_paid) FROM payments p WHERE p.customer_id = c.id AND p.sale_id IS NULL), 0) AS opening_paid,
+                COALESCE((SELECT SUM(remaining_amount) FROM sales s WHERE s.customer_id = c.id AND s.is_deleted = 0), 0) AS sales_pending
+            FROM customers c
+            WHERE c.is_active = 1
+            ORDER BY (opening_balance + sales_pending) DESC, c.name
+            """
+        )
+        suppliers_due = self._query_all(
+            """
+            SELECT
+                s.id,
+                s.name,
+                COALESCE(s.opening_balance, 0) AS opening_balance,
+                COALESCE((SELECT SUM(amount_paid) FROM supplier_payments sp WHERE sp.supplier_id = s.id), 0) AS total_paid
+            FROM suppliers s
+            WHERE s.is_active = 1
+            ORDER BY (opening_balance - total_paid) DESC, s.name
+            """
+        )
+        recent_sales = self._query_all(
+            """
+            SELECT s.id, s.invoice_number, COALESCE(c.name, 'Walk-in') AS customer_name,
+                   s.total_amount, s.paid_amount, s.remaining_amount, s.sale_date,
+                   COALESCE(u.name, u.username, 'Unknown') AS seller_name
+            FROM sales s
+            LEFT JOIN customers c ON c.id = s.customer_id
+            LEFT JOIN users u ON u.id = s.sold_by
+            WHERE s.is_deleted = 0
+            ORDER BY datetime(s.sale_date) DESC, s.id DESC
+            LIMIT 8
+            """
+        )
+        low_stock = self._query_all(
+            """
+            SELECT id, name, quantity, low_stock_threshold, purchase_price
+            FROM products
+            WHERE is_active = 1 AND quantity <= low_stock_threshold
+            ORDER BY quantity ASC, name ASC
+            LIMIT 10
+            """
+        )
+        return {
+            "inventory": inventory,
+            "sales": {**sales_items, **sales_totals},
+            "payments": payments,
+            "customers_due": customers_due,
+            "suppliers_due": suppliers_due,
+            "recent_sales": recent_sales,
+            "low_stock": low_stock,
+        }
+
+    def _render_cards(self, stats):
+        while self.cards_grid.count():
+            item = self.cards_grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._cards = []
+        cards = [
+            ("Products In Stock", str(stats["inventory"].get("in_stock_products", 0)), "#2563eb", "#eff6ff", "#dbeafe"),
+            ("Units Available", str(stats["inventory"].get("total_quantity", 0)), "#10b981", "#f0fdf4", "#d1fae5"),
+            ("Inventory Value", format_currency(stats["inventory"].get("inventory_value", 0)), "#f59e0b", "#fffbeb", "#fef3c7"),
+            ("Products Sold", str(stats["sales"].get("total_sold_qty", 0)), "#8b5cf6", "#f5f3ff", "#ede9fe"),
+            ("Sales Value", format_currency(stats["sales"].get("total_sold_value", 0)), "#0ea5e9", "#ecfeff", "#cffafe"),
+            ("Revenue", format_currency(stats["sales"].get("total_revenue", 0)), "#f97316", "#fff7ed", "#ffedd5"),
+            ("Customer Received", format_currency(stats["payments"].get("customer_received", 0) + stats["payments"].get("opening_received", 0)), "#14b8a6", "#f0fdfa", "#ccfbf1"),
+            ("Customer Pending", format_currency(stats["sales"].get("total_pending", 0)), "#ef4444", "#fef2f2", "#fee2e2"),
+            ("Supplier Pending", format_currency(self._supplier_pending_total(stats["suppliers_due"])), "#dc2626", "#fef2f2", "#fee2e2"),
+        ]
+        for idx, (title, value, accent, bg1, bg2) in enumerate(cards):
+            self.cards_grid.addWidget(self._make_card(title, value, accent, bg1, bg2), idx // 3, idx % 3)
+
+    def _supplier_pending_total(self, suppliers_due):
+        total = 0.0
+        for supplier in suppliers_due:
+            opening = float(supplier.get("opening_balance", 0) or 0)
+            paid = float(supplier.get("total_paid", 0) or 0)
+            total += max(0.0, opening - paid)
+        return total
+
+    def _render_overview(self, stats):
+        while self.overview_layout.count() > 1:
+            item = self.overview_layout.takeAt(1)
+            if item.widget():
+                item.widget().deleteLater()
+
+        summary = QLabel(
+            f"Inventory value {format_currency(stats['inventory'].get('inventory_value', 0))} "
+            f"across {stats['inventory'].get('product_count', 0)} active products. "
+            f"Customer pending is {format_currency(stats['sales'].get('total_pending', 0))} "
+            f"and supplier pending is {format_currency(self._supplier_pending_total(stats['suppliers_due']))}."
+        )
+        summary.setStyleSheet("font-size:13px;color:#334155;line-height:1.6;")
+        summary.setWordWrap(True)
+        self.overview_layout.addWidget(summary)
+
+        low_stock = stats["low_stock"]
+        if low_stock:
+            low_summary = QLabel(
+                "<b>Low stock watch:</b> "
+                + ", ".join(item["name"] for item in low_stock[:5])
+                + ("..." if len(low_stock) > 5 else "")
+            )
+            low_summary.setStyleSheet("font-size:13px;color:#92400e;")
+            low_summary.setWordWrap(True)
+            self.overview_layout.addWidget(low_summary)
+        else:
+            ok = QLabel("All tracked products are comfortably above their low-stock threshold.")
+            ok.setStyleSheet("font-size:13px;color:#15803d;")
+            self.overview_layout.addWidget(ok)
+
+    def _render_inventory(self, stats):
+        while self.inventory_layout.count() > 1:
+            item = self.inventory_layout.takeAt(1)
+            if item.widget():
+                item.widget().deleteLater()
 
         table = QTableWidget()
-        table.setColumnCount(5)
-        table.setHorizontalHeaderLabels(["Invoice", "Customer", "Amount", "Paid", "Date"])
+        table.setColumnCount(4)
+        table.setHorizontalHeaderLabels(["Product", "Qty", "Threshold", "Value"])
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QTableWidget.NoEditTriggers)
-        table.setSelectionBehavior(QTableWidget.SelectRows)
-        table.setAlternatingRowColors(True)
         table.setShowGrid(False)
-        table.setStyleSheet("""
-            QTableWidget { border:none; font-size:13px; background:white;
-                           alternate-background-color:#f8fafc; }
-            QHeaderView::section { background:#f1f5f9; color:#475569;
-                font-weight:600; padding:8px; border:none; font-size:12px; }
-            QTableWidget::item { padding:8px; color:#1e293b; }
-            QTableWidget::item:selected { background:#dbeafe; color:#1e40af; }
-        """)
-
-        sales = get_all_sales()[:8]
-        table.setRowCount(len(sales))
-        for r, s in enumerate(sales):
-            table.setItem(r, 0, QTableWidgetItem(s.get("invoice_number", "")))
-            table.setItem(r, 1, QTableWidgetItem(s.get("customer_name") or "Walk-in"))
-            table.setItem(r, 2, QTableWidgetItem(format_currency(s.get("total_amount", 0))))
-            table.setItem(r, 3, QTableWidgetItem(format_currency(s.get("paid_amount", 0))))
-            table.setItem(r, 4, QTableWidgetItem(format_datetime(s.get("sale_date", ""))))
-
-        layout.addWidget(table)
-        return panel
-
-    # ──────────────────────────────────────────────────────
-    def _make_low_stock_panel(self, items: list) -> QFrame:
-        panel = QFrame()
-        panel.setAttribute(Qt.WA_StyledBackground, True)
-        panel.setStyleSheet("""
-            QFrame { background:white; border-radius:14px;
-                     border:1px solid #e2e8f0; }
-        """)
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(16)
-        shadow.setOffset(0, 4)
-        shadow.setColor(QColor(0, 0, 0, 25))
-        panel.setGraphicsEffect(shadow)
-
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(12)
-
-        title = QLabel("⚠  Low Stock Alerts")
-        title.setStyleSheet("font-size:15px; font-weight:700; color:#0f172a;")
-        layout.addWidget(title)
-
-        if not items:
-            ok = QLabel("✅  All products are well stocked!")
-            ok.setStyleSheet("color:#10b981; font-size:13px; padding:12px 0;")
-            ok.setAlignment(Qt.AlignCenter)
-            layout.addWidget(ok)
-        else:
-            table = QTableWidget()
-            table.setColumnCount(3)
-            table.setHorizontalHeaderLabels(["Product", "Qty", "Min"])
-            table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-            table.verticalHeader().setVisible(False)
-            table.setEditTriggers(QTableWidget.NoEditTriggers)
-            table.setShowGrid(False)
-            table.setAlternatingRowColors(True)
-            table.setStyleSheet("""
-                QTableWidget { border:none; font-size:13px; background:white;
-                               alternate-background-color:#fff7ed; }
-                QHeaderView::section { background:#fff7ed; color:#92400e;
-                    font-weight:600; padding:8px; border:none; font-size:12px; }
-                QTableWidget::item { padding:8px; color:#1e293b; }
-            """)
-            table.setRowCount(len(items))
-            for r, p in enumerate(items):
-                qty = p.get("quantity", 0)
-                threshold = p.get("low_stock_threshold", 5)
-                name_item = QTableWidgetItem(p.get("name", ""))
-                qty_item  = QTableWidgetItem(str(qty))
-                min_item  = QTableWidgetItem(str(threshold))
-                if qty == 0:
-                    qty_item.setForeground(QColor("#ef4444"))
-                else:
-                    qty_item.setForeground(QColor("#f97316"))
-                table.setItem(r, 0, name_item)
-                table.setItem(r, 1, qty_item)
-                table.setItem(r, 2, min_item)
-            layout.addWidget(table)
-
-        layout.addStretch()
-        return panel
-
-    # ──────────────────────────────────────────────────────
-    def _chart_panel(self, title: str) -> tuple:
-        """Create a white card panel, return (panel, inner_layout)."""
-        panel = QFrame()
-        panel.setAttribute(Qt.WA_StyledBackground, True)
-        panel.setStyleSheet("QFrame{background:white;border-radius:14px;border:1px solid #e2e8f0;}")
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(14)
-        shadow.setOffset(0, 3)
-        shadow.setColor(QColor(0, 0, 0, 22))
-        panel.setGraphicsEffect(shadow)
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(10)
-        lbl = QLabel(title)
-        lbl.setStyleSheet("font-size:15px;font-weight:700;color:#0f172a;")
-        layout.addWidget(lbl)
-        return panel, layout
-
-    def _make_weekly_sales_chart(self) -> QFrame:
-        panel, layout = self._chart_panel("📊  Weekly Sales (Last 7 Days)")
-
-        # Build date labels for last 7 days
-        today = datetime.now().date()
-        days  = [(today - timedelta(days=6 - i)) for i in range(7)]
-        day_strs = {str(d): d.strftime("%a") for d in days}
-
-        raw = {r["day"]: r["total"] for r in get_weekly_sales()}
-        values = [raw.get(str(d), 0) for d in days]
-        labels = [day_strs[str(d)] for d in days]
-
-        fig, ax = plt.subplots(figsize=(5, 2.2))
-        fig.patch.set_facecolor("white")
-        ax.set_facecolor("#f8fafc")
-        colors = ["#2e7d32" if v == max(values) else "#86efac" for v in values]
-        bars = ax.bar(labels, values, color=colors, width=0.55, zorder=3)
-        ax.set_ylabel("Rs", fontsize=9, color="#64748b")
-        ax.tick_params(colors="#64748b", labelsize=9)
-        ax.spines[["top", "right", "left"]].set_visible(False)
-        ax.yaxis.grid(True, color="#e2e8f0", linewidth=0.8, zorder=0)
-        ax.set_axisbelow(True)
-        for bar, val in zip(bars, values):
-            if val > 0:
-                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max(values) * 0.01,
-                        f"{val:,.0f}", ha="center", va="bottom", fontsize=8, color="#0f172a")
-        fig.tight_layout()
-
-        canvas = FigureCanvas(fig)
-        canvas.setFixedHeight(200)
-        layout.addWidget(canvas)
-        plt.close(fig)
-        return panel
-
-    def _make_inventory_pie_chart(self) -> QFrame:
-        panel, layout = self._chart_panel("🥧  Inventory Status")
-
-        products  = get_all_products()
-        in_stock  = sum(1 for p in products if p.get("quantity", 0) > p.get("low_stock_threshold", 5))
-        low_stock = sum(1 for p in products if 0 < p.get("quantity", 0) <= p.get("low_stock_threshold", 5))
-        out_stock = sum(1 for p in products if p.get("quantity", 0) == 0)
-
-        sizes  = [in_stock, low_stock, out_stock]
-        labels = ["In Stock", "Low Stock", "Out of Stock"]
-        colors = ["#4ade80", "#fbbf24", "#f87171"]
-        sizes  = [s for s, l in zip(sizes, labels) if s > 0]
-        colors = [c for c, s in zip(colors, [in_stock, low_stock, out_stock]) if s > 0]
-        labels = [l for l, s in zip(labels, [in_stock, low_stock, out_stock]) if s > 0]
-
-        fig, ax = plt.subplots(figsize=(3.5, 2.2))
-        fig.patch.set_facecolor("white")
-        if sizes:
-            wedges, texts, autotexts = ax.pie(
-                sizes, labels=labels, colors=colors,
-                autopct="%1.0f%%", startangle=140,
-                wedgeprops=dict(edgecolor="white", linewidth=2),
-                textprops={"fontsize": 9, "color": "#0f172a"},
-            )
-            for at in autotexts:
-                at.set_fontsize(9)
-                at.set_color("white")
-                at.set_fontweight("bold")
-        else:
-            ax.text(0.5, 0.5, "No Data", ha="center", va="center", transform=ax.transAxes,
-                    fontsize=12, color="#94a3b8")
-            ax.axis("off")
-        fig.tight_layout()
-
-        canvas = FigureCanvas(fig)
-        canvas.setFixedHeight(200)
-        layout.addWidget(canvas)
-        plt.close(fig)
-        return panel
-
-    def _make_pending_payments_panel(self) -> QFrame:
-        panel = QFrame()
-        panel.setAttribute(Qt.WA_StyledBackground, True)
-        panel.setStyleSheet("QFrame{background:white;border-radius:14px;border:1px solid #e2e8f0;}")
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(14)
-        shadow.setOffset(0, 3)
-        shadow.setColor(QColor(0, 0, 0, 22))
-        panel.setGraphicsEffect(shadow)
-
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(18, 14, 18, 14)
-        layout.setSpacing(10)
-
-        title = QLabel("⏳  Pending Payments")
-        title.setStyleSheet("font-size:15px;font-weight:700;color:#0f172a;")
-        layout.addWidget(title)
-
-        pending = get_pending_sales()
-        if not pending:
-            ok = QLabel("✅  No pending payments!")
-            ok.setStyleSheet("color:#10b981;font-size:13px;padding:8px 0;")
-            ok.setAlignment(Qt.AlignCenter)
-            layout.addWidget(ok)
-        else:
-            table = QTableWidget()
-            table.setColumnCount(4)
-            table.setHorizontalHeaderLabels(["Invoice", "Customer", "Remaining", "Date"])
-            table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-            table.verticalHeader().setVisible(False)
-            table.setEditTriggers(QTableWidget.NoEditTriggers)
-            table.setShowGrid(False)
-            table.setAlternatingRowColors(True)
-            table.setFixedHeight(min(len(pending) * 42 + 44, 220))
-            table.setStyleSheet("""
-                QTableWidget{border:none;font-size:13px;background:white;
-                             alternate-background-color:#fef2f2;}
-                QHeaderView::section{background:#fef2f2;color:#dc2626;
-                    font-weight:600;padding:8px;border:none;font-size:12px;}
-                QTableWidget::item{padding:8px;color:#1e293b;}
-                QTableWidget::item:selected{background:#fee2e2;color:#991b1b;}
-            """)
-            table.setRowCount(len(pending))
-            for r, row in enumerate(pending):
-                table.setItem(r, 0, QTableWidgetItem(row.get("invoice_number", "")))
-                table.setItem(r, 1, QTableWidgetItem(row.get("customer_name") or "Walk-in"))
-                amt = QTableWidgetItem(format_currency(row.get("remaining_amount", 0)))
-                amt.setForeground(QColor("#dc2626"))
-                table.setItem(r, 2, amt)
-                table.setItem(r, 3, QTableWidgetItem(format_datetime(row.get("sale_date", ""))))
-            layout.addWidget(table)
-        return panel
-
-    def _make_category_overview_panel(self) -> QFrame:
-        panel = QFrame()
-        panel.setAttribute(Qt.WA_StyledBackground, True)
-        panel.setStyleSheet("QFrame{background:white;border-radius:14px;border:1px solid #e2e8f0;}")
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(18, 14, 18, 14)
-        layout.setSpacing(10)
-
-        title = QLabel("Category Snapshot")
-        title.setStyleSheet("font-size:15px;font-weight:700;color:#0f172a;")
-        layout.addWidget(title)
-
-        grid = QGridLayout()
-        grid.setSpacing(10)
-        metrics = get_category_metrics()
-        accents = ["#2563eb", "#f59e0b", "#10b981"]
-        bg = ["#eff6ff", "#fffbeb", "#f0fdf4"]
-        for idx, metric in enumerate(metrics):
-            card = QFrame()
-            card.setAttribute(Qt.WA_StyledBackground, True)
-            card.setStyleSheet(
-                f"QFrame{{background:{bg[idx]};border:1px solid {accents[idx]}33;"
-                "border-radius:12px;}}"
-            )
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(14, 12, 14, 12)
-            card_layout.setSpacing(4)
-            heading = QLabel(metric["category"])
-            heading.setStyleSheet(f"font-size:14px;font-weight:700;color:{accents[idx]};")
-            card_layout.addWidget(heading)
-            lines = [
-                f"Stock Qty: <b>{metric['stock_quantity']}</b>",
-                f"Stock Value: <b>{format_currency(metric['stock_value'])}</b>",
-                f"Total Sales: <b>{format_currency(metric['total_sales'])}</b>",
-                f"Income: <b>{format_currency(metric['total_income'])}</b>",
-                f"Products: <b>{metric['total_products']}</b>",
-                f"Low Stock: <b>{metric['low_stock']}</b>",
+        table.setAlternatingRowColors(True)
+        table.setRowCount(len(stats["low_stock"]))
+        table.setFixedHeight(240)
+        table.setStyleSheet(
+            "QTableWidget{border:none;font-size:13px;background:white;alternate-background-color:#f8fafc;}"
+            "QHeaderView::section{background:#f1f5f9;color:#475569;font-weight:700;font-size:12px;padding:8px;border:none;}"
+            "QTableWidget::item{padding:8px;color:#1e293b;}"
+        )
+        for row, item_data in enumerate(stats["low_stock"]):
+            values = [
+                item_data.get("name", ""),
+                str(item_data.get("quantity", 0) or 0),
+                str(item_data.get("low_stock_threshold", 0) or 0),
+                format_currency((item_data.get("quantity", 0) or 0) * (item_data.get("purchase_price", 0) or 0)),
             ]
-            for line in lines:
-                lbl = QLabel(line)
-                lbl.setStyleSheet("font-size:12px;color:#334155;")
-                card_layout.addWidget(lbl)
-            grid.addWidget(card, 0, idx)
-        layout.addLayout(grid)
-        return panel
+            for col, value in enumerate(values):
+                table.setItem(row, col, QTableWidgetItem(value))
+        if not stats["low_stock"]:
+            note = QLabel("No low-stock alerts right now.")
+            note.setStyleSheet("font-size:13px;color:#15803d;padding:8px 0;")
+            self.inventory_layout.addWidget(note)
+        self.inventory_layout.addWidget(table)
 
-    # ──────────────────────────────────────────────────────
-    def _load_stats(self) -> dict:
-        try:
-            products  = get_all_products()
-            customers = get_all_customers()
-            suppliers = get_all_suppliers()
-            low_stock = get_low_stock_products()
-            summary   = get_sales_summary()
-        except Exception:
-            return {"products": 0, "customers": 0, "suppliers": 0,
-                    "revenue": "Rs 0", "pending": "Rs 0", "low_stock": 0}
-        return {
-            "products":  len(products),
-            "customers": len(customers),
-            "suppliers": len(suppliers),
-            "revenue":   format_currency(summary.get("total_revenue", 0)),
-            "pending":   format_currency(summary.get("total_pending", 0)),
-            "low_stock": len(low_stock),
-        }
+    def _render_recent_sales(self, recent_sales):
+        while self.recent_layout.count() > 1:
+            item = self.recent_layout.takeAt(1)
+            if item.widget():
+                item.widget().deleteLater()
 
-    def _refresh(self):
-        old_layout = self.layout()
-        if old_layout:
-            while old_layout.count():
-                item = old_layout.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
-            # Replace the layout
-            from PySide6.QtWidgets import QWidget as _W
-            tmp = _W()
-            tmp.setLayout(old_layout)
-        self._build_ui()
+        table = QTableWidget()
+        table.setColumnCount(6)
+        table.setHorizontalHeaderLabels(["Invoice", "Customer", "Revenue", "Paid", "Remaining", "Date"])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setShowGrid(False)
+        table.setAlternatingRowColors(True)
+        table.setRowCount(len(recent_sales))
+        table.setFixedHeight(240)
+        table.setStyleSheet(
+            "QTableWidget{border:none;font-size:13px;background:white;alternate-background-color:#f8fafc;}"
+            "QHeaderView::section{background:#f1f5f9;color:#475569;font-weight:700;font-size:12px;padding:8px;border:none;}"
+            "QTableWidget::item{padding:8px;color:#1e293b;}"
+        )
+        for row, sale in enumerate(recent_sales):
+            cells = [
+                sale.get("invoice_number", ""),
+                sale.get("customer_name", ""),
+                format_currency(sale.get("total_amount", 0) or 0),
+                format_currency(sale.get("paid_amount", 0) or 0),
+                format_currency(sale.get("remaining_amount", 0) or 0),
+                format_datetime(sale.get("sale_date", "")),
+            ]
+            for col, text in enumerate(cells):
+                table.setItem(row, col, QTableWidgetItem(text))
+        if not recent_sales:
+            note = QLabel("No recent sales yet.")
+            note.setStyleSheet("font-size:13px;color:#64748b;padding:8px 0;")
+            self.recent_layout.addWidget(note)
+        self.recent_layout.addWidget(table)
+
+    def _render_customer_balances(self, customers_due):
+        while self.customers_layout.count() > 1:
+            item = self.customers_layout.takeAt(1)
+            if item.widget():
+                item.widget().deleteLater()
+
+        table = QTableWidget()
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(["Customer", "Opening", "Outstanding"])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setShowGrid(False)
+        table.setAlternatingRowColors(True)
+        rows = []
+        for customer in customers_due:
+            opening_balance = float(customer.get("opening_balance", 0) or 0)
+            opening_paid = float(customer.get("opening_paid", 0) or 0)
+            sales_pending = float(customer.get("sales_pending", 0) or 0)
+            outstanding = max(0.0, opening_balance - opening_paid) + sales_pending
+            if outstanding > 0:
+                rows.append((customer.get("name", ""), opening_balance, outstanding))
+        table.setRowCount(len(rows))
+        table.setFixedHeight(240)
+        table.setStyleSheet(
+            "QTableWidget{border:none;font-size:13px;background:white;alternate-background-color:#f8fafc;}"
+            "QHeaderView::section{background:#f1f5f9;color:#475569;font-weight:700;font-size:12px;padding:8px;border:none;}"
+            "QTableWidget::item{padding:8px;color:#1e293b;}"
+        )
+        for row, (name, opening, outstanding) in enumerate(rows):
+            table.setItem(row, 0, QTableWidgetItem(name))
+            table.setItem(row, 1, QTableWidgetItem(format_currency(opening)))
+            outstanding_item = QTableWidgetItem(format_currency(outstanding))
+            outstanding_item.setForeground(QColor("#dc2626"))
+            table.setItem(row, 2, outstanding_item)
+        if not rows:
+            note = QLabel("No customer balances are pending.")
+            note.setStyleSheet("font-size:13px;color:#15803d;padding:8px 0;")
+            self.customers_layout.addWidget(note)
+        self.customers_layout.addWidget(table)
+
+    def _render_supplier_balances(self, suppliers_due):
+        while self.suppliers_layout.count() > 1:
+            item = self.suppliers_layout.takeAt(1)
+            if item.widget():
+                item.widget().deleteLater()
+
+        table = QTableWidget()
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(["Supplier", "Opening", "Outstanding"])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setShowGrid(False)
+        table.setAlternatingRowColors(True)
+        rows = []
+        for supplier in suppliers_due:
+            opening = float(supplier.get("opening_balance", 0) or 0)
+            paid = float(supplier.get("total_paid", 0) or 0)
+            outstanding = max(0.0, opening - paid)
+            if outstanding > 0:
+                rows.append((supplier.get("name", ""), opening, outstanding))
+        table.setRowCount(len(rows))
+        table.setFixedHeight(240)
+        table.setStyleSheet(
+            "QTableWidget{border:none;font-size:13px;background:white;alternate-background-color:#f8fafc;}"
+            "QHeaderView::section{background:#f1f5f9;color:#475569;font-weight:700;font-size:12px;padding:8px;border:none;}"
+            "QTableWidget::item{padding:8px;color:#1e293b;}"
+        )
+        for row, (name, opening, outstanding) in enumerate(rows):
+            table.setItem(row, 0, QTableWidgetItem(name))
+            table.setItem(row, 1, QTableWidgetItem(format_currency(opening)))
+            outstanding_item = QTableWidgetItem(format_currency(outstanding))
+            outstanding_item.setForeground(QColor("#dc2626"))
+            table.setItem(row, 2, outstanding_item)
+        if not rows:
+            note = QLabel("No supplier balances are pending.")
+            note.setStyleSheet("font-size:13px;color:#15803d;padding:8px 0;")
+            self.suppliers_layout.addWidget(note)
+        self.suppliers_layout.addWidget(table)

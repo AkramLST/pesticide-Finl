@@ -7,6 +7,7 @@ def get_all_customers():
     rows = conn.execute(
         """
         SELECT c.*,
+               COALESCE(c.opening_balance, 0) AS opening_balance_calc,
                COALESCE((
                    SELECT SUM(amount_paid)
                    FROM payments
@@ -27,20 +28,32 @@ def get_all_customers():
         ORDER BY c.name
         """
     ).fetchall()
-    conn.close()
     customers = []
     for r in rows:
         row = dict(r)
+        opening_calc = row.pop("opening_balance_calc", None)
         paid_calc = row.pop("total_paid_calc", None)
         pend_calc = row.pop("total_pending_calc", None)
         last_calc = row.pop("last_sale_calc", None)
+        if opening_calc is not None:
+            row["opening_balance"] = opening_calc
         if paid_calc is not None:
             row["total_paid"] = paid_calc
         if pend_calc is not None:
-            row["total_pending"] = pend_calc
+            opening_paid_row = conn.execute(
+                """
+                SELECT COALESCE(SUM(amount_paid), 0) AS total_paid
+                FROM payments
+                WHERE customer_id = ? AND sale_id IS NULL
+                """,
+                (row["id"],),
+            ).fetchone()
+            opening_paid = float(opening_paid_row["total_paid"] or 0) if opening_paid_row else 0.0
+            row["total_pending"] = max(0.0, float(row.get("opening_balance", 0) or 0) - opening_paid) + pend_calc
         if last_calc is not None:
             row["last_purchase_date"] = last_calc
         customers.append(row)
+    conn.close()
     return customers
 
 
@@ -55,9 +68,15 @@ def insert_customer(data: dict) -> int:
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
-        INSERT INTO customers (name, phone, address, notes)
-        VALUES (:name, :phone, :address, :notes)
-    """, data)
+        INSERT INTO customers (name, phone, address, notes, opening_balance)
+        VALUES (:name, :phone, :address, :notes, :opening_balance)
+    """, {
+        "name": data.get("name", ""),
+        "phone": data.get("phone", ""),
+        "address": data.get("address", ""),
+        "notes": data.get("notes", ""),
+        "opening_balance": data.get("opening_balance", 0) or 0,
+    })
     new_id = c.lastrowid
     conn.commit()
     conn.close()
@@ -68,9 +87,17 @@ def update_customer(customer_id: int, data: dict):
     conn = get_connection()
     conn.execute("""
         UPDATE customers SET name=:name, phone=:phone, address=:address,
-            notes=:notes, updated_at=datetime('now','localtime')
+            notes=:notes, opening_balance=:opening_balance,
+            updated_at=datetime('now','localtime')
         WHERE id=:id
-    """, {**data, "id": customer_id})
+    """, {
+        "id": customer_id,
+        "name": data.get("name", ""),
+        "phone": data.get("phone", ""),
+        "address": data.get("address", ""),
+        "notes": data.get("notes", ""),
+        "opening_balance": data.get("opening_balance", 0) or 0,
+    })
     conn.commit()
     conn.close()
 

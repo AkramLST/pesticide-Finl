@@ -170,10 +170,12 @@ class CustomersPage(QWidget):
             item = self._sbar.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+        opening = sum(c.get("opening_balance", 0) or 0 for c in customers)
         total_paid = sum(c.get("total_paid", 0) or 0 for c in customers)
         total_pend = sum(c.get("total_pending", 0) or 0 for c in customers)
         for text, color in [
             (f"Total: <b>{len(customers)}</b>", "#475569"),
+            (f"Opening: <b>{format_currency(opening)}</b>", "#7c3aed"),
             (f"💰 Collected: <b>{format_currency(total_paid)}</b>", "#2e7d32"),
             (f"⏳ Pending: <b>{format_currency(total_pend)}</b>", "#ef4444"),
         ]:
@@ -323,16 +325,23 @@ class CustomerDialog(QDialog):
         self.address_input = QLineEdit()
         self.notes_input   = QTextEdit()
         self.notes_input.setFixedHeight(60)
+        self.opening_input = QDoubleSpinBox()
+        self.opening_input.setRange(0, 1_000_000_000)
+        self.opening_input.setPrefix("Rs ")
+        self.opening_input.setDecimals(2)
 
         _field_style = ("QLineEdit,QTextEdit{border:1.5px solid #e2e8f0;border-radius:7px;"
                         "padding:8px;font-size:13px;background:white;}"
-                        "QLineEdit:focus,QTextEdit:focus{border-color:#2e7d32;}")
-        for w in (self.name_input, self.phone_input, self.address_input, self.notes_input):
+                        "QLineEdit:focus,QTextEdit:focus{border-color:#2e7d32;}"
+                        "QDoubleSpinBox{border:1.5px solid #e2e8f0;border-radius:7px;"
+                        "padding:8px;font-size:13px;background:white;}")
+        for w in (self.name_input, self.phone_input, self.address_input, self.notes_input, self.opening_input):
             w.setStyleSheet(_field_style)
 
         form.addRow("Name *:",    self.name_input)
         form.addRow("Phone:",     self.phone_input)
         form.addRow("Address:",   self.address_input)
+        form.addRow("Opening Balance:", self.opening_input)
         form.addRow("Notes:",     self.notes_input)
         root.addLayout(form)
 
@@ -354,6 +363,7 @@ class CustomerDialog(QDialog):
         self.phone_input.setText(c.get("phone","") or "")
         self.address_input.setText(c.get("address","") or "")
         self.notes_input.setPlainText(c.get("notes","") or "")
+        self.opening_input.setValue(c.get("opening_balance", 0) or 0)
 
     def _save(self):
         name = self.name_input.text().strip()
@@ -365,6 +375,7 @@ class CustomerDialog(QDialog):
             "phone":   self.phone_input.text().strip(),
             "address": self.address_input.text().strip(),
             "notes":   self.notes_input.toPlainText().strip(),
+            "opening_balance": self.opening_input.value(),
         }
         try:
             if self.customer:
@@ -393,6 +404,11 @@ class PurchaseHistoryDialog(QDialog):
         heading = QLabel(f"<b>{customer['name']}</b>  purchase history")
         heading.setStyleSheet("font-size:15px;color:#0f172a;")
         root.addWidget(heading)
+        opening = format_currency(customer.get("opening_balance", 0) or 0)
+        outstanding = format_currency(customer.get("total_pending", 0) or 0)
+        summary = QLabel(f"Opening balance: <b>{opening}</b>  |  Outstanding: <b>{outstanding}</b>")
+        summary.setStyleSheet("font-size:13px;color:#475569;")
+        root.addWidget(summary)
 
         sales = [s for s in get_all_sales() if s.get("customer_id") == customer["id"]]
         payments = get_customer_payments(customer["id"])
@@ -450,7 +466,7 @@ class PurchaseHistoryDialog(QDialog):
         for row, pay in enumerate(payments):
             cells = [
                 format_datetime(pay.get("payment_date", "") or ""),
-                pay.get("invoice_number", "") or "—",
+                pay.get("invoice_number", "") or ("Opening Balance" if not pay.get("sale_id") else "—"),
                 format_currency(pay.get("amount_paid", 0) or 0),
                 format_currency(pay.get("remaining_balance", 0) or 0),
                 pay.get("payment_method", "") or "—",

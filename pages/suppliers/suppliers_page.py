@@ -2,14 +2,14 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QLineEdit, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QMessageBox, QDialog,
-    QFormLayout, QTextEdit
+    QFormLayout, QTextEdit, QDoubleSpinBox
 )
 from PySide6.QtCore import Qt
 from database.connection import get_connection
 from models.supplier_model import (
     get_all_suppliers, insert_supplier, update_supplier, delete_supplier
 )
-from utils.helpers import format_datetime
+from utils.helpers import format_datetime, format_currency
 
 _TABLE_STYLE = """
     QTableWidget { border:none; font-size:13px; background:white;
@@ -48,6 +48,16 @@ def _product_count(supplier_id: int) -> int:
     ).fetchone()
     conn.close()
     return row["cnt"] if row else 0
+
+
+def _supplier_payment_total(supplier_id: int) -> float:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT COALESCE(SUM(amount_paid), 0) AS total_paid FROM supplier_payments WHERE supplier_id=?",
+        (supplier_id,),
+    ).fetchone()
+    conn.close()
+    return float(row["total_paid"] or 0) if row else 0.0
 
 
 class SuppliersPage(QWidget):
@@ -171,9 +181,14 @@ class SuppliersPage(QWidget):
             if item.widget():
                 item.widget().deleteLater()
         total_prods = sum(s.get("_prod_count", 0) for s in suppliers)
+        total_open = sum(float(s.get("opening_balance", 0) or 0) for s in suppliers)
+        total_paid = sum(float(s.get("_paid_total", 0) or 0) for s in suppliers)
+        total_pending = max(0.0, total_open - total_paid)
         for text, color in [
             (f"Total Suppliers: <b>{len(suppliers)}</b>", "#475569"),
             (f"📦 Products Supplied: <b>{total_prods}</b>", "#2e7d32"),
+            (f"💵 Paid: <b>{format_currency(total_paid)}</b>", "#0f766e"),
+            (f"⏳ Pending: <b>{format_currency(total_pending)}</b>", "#dc2626"),
         ]:
             lbl = QLabel(text)
             lbl.setStyleSheet(f"font-size:13px;color:{color};")
@@ -184,6 +199,7 @@ class SuppliersPage(QWidget):
         rows = get_all_suppliers()
         for s in rows:
             s["_prod_count"] = _product_count(s["id"])
+            s["_paid_total"] = _supplier_payment_total(s["id"])
         self._all = rows
         self._filter()
 
@@ -291,11 +307,17 @@ class SupplierDialog(QDialog):
         self.address_i = QLineEdit(); self.address_i.setStyleSheet(_fs)
         self.notes_i   = QTextEdit(); self.notes_i.setFixedHeight(60)
         self.notes_i.setStyleSheet(_fs)
+        self.opening_i = QDoubleSpinBox()
+        self.opening_i.setRange(0, 1_000_000_000)
+        self.opening_i.setPrefix("Rs ")
+        self.opening_i.setDecimals(2)
+        self.opening_i.setStyleSheet(_fs)
 
         form.addRow("Name *:",   self.name_i)
         form.addRow("Phone:",    self.phone_i)
         form.addRow("Email:",    self.email_i)
         form.addRow("Address:",  self.address_i)
+        form.addRow("Opening Balance:", self.opening_i)
         form.addRow("Notes:",    self.notes_i)
         root.addLayout(form)
 
@@ -314,6 +336,7 @@ class SupplierDialog(QDialog):
         self.email_i.setText(s.get("email","") or "")
         self.address_i.setText(s.get("address","") or "")
         self.notes_i.setPlainText(s.get("notes","") or "")
+        self.opening_i.setValue(s.get("opening_balance", 0) or 0)
 
     def _save(self):
         name = self.name_i.text().strip()
@@ -326,6 +349,7 @@ class SupplierDialog(QDialog):
             "email":   self.email_i.text().strip(),
             "address": self.address_i.text().strip(),
             "notes":   self.notes_i.toPlainText().strip(),
+            "opening_balance": self.opening_i.value(),
         }
         try:
             if self.supplier:
