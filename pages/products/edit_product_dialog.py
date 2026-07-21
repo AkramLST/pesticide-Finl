@@ -84,6 +84,9 @@ class EditProductDialog(QDialog):
         self.sale_price.setPrefix("Rs ")
         self.sale_price.setDecimals(2)
 
+        self.batch_input = QLineEdit()
+        self.batch_input.setPlaceholderText("Enter batch / lot number")
+
         self.weight_input = QLineEdit()
         self.weight_input.setPlaceholderText("e.g. 500ml, 1kg")
 
@@ -117,6 +120,7 @@ class EditProductDialog(QDialog):
         form.addRow("Supplier:", self.supplier_combo)
         form.addRow("Purchase Price:", self.purchase_price)
         form.addRow("Sale Price:", self.sale_price)
+        form.addRow("Batch Number:", self.batch_input)
         form.addRow("Weight/Unit:", self.weight_input)
         form.addRow("Quantity:", self.quantity_input)
         form.addRow("Low Stock At:", self.low_stock_input)
@@ -151,6 +155,7 @@ class EditProductDialog(QDialog):
 
         self.purchase_price.setValue(p.get("purchase_price", 0) or 0)
         self.sale_price.setValue(p.get("sale_price", 0) or 0)
+        self.batch_input.setText(p.get("batch_number", "") or "")
         self.weight_input.setText(p.get("weight", "") or "")
         self.quantity_input.setValue(p.get("quantity", 0) or 0)
         self.low_stock_input.setValue(p.get("low_stock_threshold", 5) or 5)
@@ -233,6 +238,7 @@ class EditProductDialog(QDialog):
             "formulation":         self.formulation_combo.currentText(),
             "purchase_price":      self.purchase_price.value(),
             "sale_price":          self.sale_price.value(),
+            "batch_number":        self.batch_input.text().strip(),
             "quantity":            self.quantity_input.value(),
             "unit_type":           self.product.get("unit_type", ""),
             "weight":              self.weight_input.text(),

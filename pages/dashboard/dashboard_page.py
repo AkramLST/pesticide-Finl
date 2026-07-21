@@ -78,6 +78,9 @@ class DashboardPage(QWidget):
         self.overview_card, self.overview_layout = self._make_section("Business Overview")
         self.root.addWidget(self.overview_card)
 
+        self.category_card, self.category_layout = self._make_section("Category-wise Statistics")
+        self.root.addWidget(self.category_card)
+
         charts_row = QHBoxLayout()
         charts_row.setSpacing(14)
         self.inventory_card, self.inventory_layout = self._make_section("Inventory Snapshot")
@@ -194,6 +197,7 @@ class DashboardPage(QWidget):
         self._render_banner(stats["low_stock"])
         self._render_cards(stats)
         self._render_overview(stats)
+        self._render_categories(stats["categories"])
         self._render_inventory(stats)
         self._render_recent_sales(stats["recent_sales"])
         self._render_customer_balances(stats["customers_due"])
@@ -269,10 +273,33 @@ class DashboardPage(QWidget):
                 s.id,
                 s.name,
                 COALESCE(s.opening_balance, 0) AS opening_balance,
+                COALESCE((SELECT SUM(total_amount) FROM supplier_purchases sp WHERE sp.supplier_id = s.id), 0) AS purchase_total,
+                COALESCE((SELECT SUM(amount_paid) FROM supplier_purchases sp WHERE sp.supplier_id = s.id), 0) AS paid_at_purchase,
                 COALESCE((SELECT SUM(amount_paid) FROM supplier_payments sp WHERE sp.supplier_id = s.id), 0) AS total_paid
             FROM suppliers s
             WHERE s.is_active = 1
-            ORDER BY (opening_balance - total_paid) DESC, s.name
+            ORDER BY (opening_balance + purchase_total - paid_at_purchase - total_paid) DESC, s.name
+            """
+        )
+        categories = self._query_all(
+            """
+            SELECT
+                COALESCE(p.category, 'Uncategorized') AS category,
+                COUNT(DISTINCT p.id) AS product_count,
+                COALESCE(SUM(p.quantity), 0) AS stock_units,
+                COALESCE(SUM(p.quantity * p.purchase_price), 0) AS stock_value,
+                COALESCE((SELECT SUM(si.quantity)
+                          FROM sale_items si JOIN sales s ON s.id=si.sale_id
+                          JOIN products sold_p ON sold_p.id=si.product_id
+                          WHERE s.is_deleted=0 AND COALESCE(sold_p.category, 'Uncategorized')=COALESCE(p.category, 'Uncategorized')), 0) AS units_sold,
+                COALESCE((SELECT SUM(si.subtotal)
+                          FROM sale_items si JOIN sales s ON s.id=si.sale_id
+                          JOIN products sold_p ON sold_p.id=si.product_id
+                          WHERE s.is_deleted=0 AND COALESCE(sold_p.category, 'Uncategorized')=COALESCE(p.category, 'Uncategorized')), 0) AS sales_value
+            FROM products p
+            WHERE p.is_active=1
+            GROUP BY COALESCE(p.category, 'Uncategorized')
+            ORDER BY category
             """
         )
         recent_sales = self._query_all(
@@ -303,6 +330,7 @@ class DashboardPage(QWidget):
             "payments": payments,
             "customers_due": customers_due,
             "suppliers_due": suppliers_due,
+            "categories": categories,
             "recent_sales": recent_sales,
             "low_stock": low_stock,
         }
@@ -331,9 +359,47 @@ class DashboardPage(QWidget):
         total = 0.0
         for supplier in suppliers_due:
             opening = float(supplier.get("opening_balance", 0) or 0)
-            paid = float(supplier.get("total_paid", 0) or 0)
-            total += max(0.0, opening - paid)
+            purchases = float(supplier.get("purchase_total", 0) or 0)
+            paid = (float(supplier.get("paid_at_purchase", 0) or 0)
+                    + float(supplier.get("total_paid", 0) or 0))
+            total += max(0.0, opening + purchases - paid)
         return total
+
+    def _render_categories(self, categories):
+        while self.category_layout.count() > 1:
+            item = self.category_layout.takeAt(1)
+            if item.widget():
+                item.widget().deleteLater()
+
+        table = QTableWidget()
+        table.setColumnCount(6)
+        table.setHorizontalHeaderLabels([
+            "Category", "Products", "Stock Units", "Stock Value", "Units Sold", "Sales Value"
+        ])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setAlternatingRowColors(True)
+        table.setShowGrid(False)
+        table.setRowCount(len(categories))
+        table.setFixedHeight(max(150, min(280, 46 + len(categories) * 38)))
+        table.setStyleSheet(
+            "QTableWidget{border:none;font-size:13px;background:white;alternate-background-color:#f8fafc;}"
+            "QHeaderView::section{background:#f1f5f9;color:#475569;font-weight:700;font-size:12px;padding:8px;border:none;}"
+            "QTableWidget::item{padding:8px;color:#1e293b;}"
+        )
+        for row, category in enumerate(categories):
+            values = [
+                category.get("category", "Uncategorized"),
+                str(category.get("product_count", 0) or 0),
+                str(category.get("stock_units", 0) or 0),
+                format_currency(category.get("stock_value", 0) or 0),
+                str(category.get("units_sold", 0) or 0),
+                format_currency(category.get("sales_value", 0) or 0),
+            ]
+            for col, value in enumerate(values):
+                table.setItem(row, col, QTableWidgetItem(value))
+        self.category_layout.addWidget(table)
 
     def _render_overview(self, stats):
         while self.overview_layout.count() > 1:
@@ -489,7 +555,7 @@ class DashboardPage(QWidget):
 
         table = QTableWidget()
         table.setColumnCount(3)
-        table.setHorizontalHeaderLabels(["Supplier", "Opening", "Outstanding"])
+        table.setHorizontalHeaderLabels(["Supplier", "Total Payable", "Outstanding"])
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -498,10 +564,12 @@ class DashboardPage(QWidget):
         rows = []
         for supplier in suppliers_due:
             opening = float(supplier.get("opening_balance", 0) or 0)
-            paid = float(supplier.get("total_paid", 0) or 0)
-            outstanding = max(0.0, opening - paid)
+            purchases = float(supplier.get("purchase_total", 0) or 0)
+            paid = (float(supplier.get("paid_at_purchase", 0) or 0)
+                    + float(supplier.get("total_paid", 0) or 0))
+            outstanding = max(0.0, opening + purchases - paid)
             if outstanding > 0:
-                rows.append((supplier.get("name", ""), opening, outstanding))
+                rows.append((supplier.get("name", ""), opening + purchases, outstanding))
         table.setRowCount(len(rows))
         table.setFixedHeight(240)
         table.setStyleSheet(

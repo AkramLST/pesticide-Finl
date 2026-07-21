@@ -26,23 +26,45 @@ def get_product_by_id(product_id: int):
 
 def insert_product(data: dict) -> int:
     conn = get_connection()
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO products
-            (name, description, brand, category, formulation,
-             purchase_price, sale_price, quantity, unit_type, weight,
-             supplier_id, sub_category, manufacturing_date, expiry_date,
-             low_stock_threshold, image, secret_product)
-        VALUES
-            (:name, :description, :brand, :category, :formulation,
-             :purchase_price, :sale_price, :quantity, :unit_type, :weight,
-             :supplier_id, :sub_category, :manufacturing_date, :expiry_date,
-             :low_stock_threshold, :image, :secret_product)
-    """, data)
-    new_id = c.lastrowid
-    conn.commit()
-    conn.close()
-    return new_id
+    try:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO products
+                (name, description, brand, category, formulation, batch_number,
+                 purchase_price, sale_price, supplier_paid_amount, quantity, unit_type, weight,
+                 supplier_id, sub_category, manufacturing_date, expiry_date,
+                 low_stock_threshold, image, secret_product)
+            VALUES
+                (:name, :description, :brand, :category, :formulation, :batch_number,
+                 :purchase_price, :sale_price, :supplier_paid_amount, :quantity, :unit_type, :weight,
+                 :supplier_id, :sub_category, :manufacturing_date, :expiry_date,
+                 :low_stock_threshold, :image, :secret_product)
+        """, data)
+        new_id = c.lastrowid
+
+        # Keep the original stock purchase immutable so sales do not reduce the
+        # amount owed to the supplier when they reduce products.quantity.
+        if data.get("supplier_id"):
+            quantity = int(data.get("quantity", 0) or 0)
+            unit_cost = float(data.get("purchase_price", 0) or 0)
+            paid = float(data.get("supplier_paid_amount", 0) or 0)
+            c.execute("""
+                INSERT INTO supplier_purchases
+                    (supplier_id, product_id, batch_number, quantity, unit_cost,
+                     total_amount, amount_paid, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                data["supplier_id"], new_id, data.get("batch_number", ""),
+                quantity, unit_cost, quantity * unit_cost, paid,
+                f"Initial stock purchase for {data.get('name', '')}",
+            ))
+        conn.commit()
+        return new_id
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def update_product(product_id: int, data: dict):
@@ -50,7 +72,8 @@ def update_product(product_id: int, data: dict):
     conn.execute("""
         UPDATE products SET
             name=:name, description=:description, brand=:brand, category=:category,
-            formulation=:formulation, purchase_price=:purchase_price, sale_price=:sale_price,
+            formulation=:formulation, batch_number=:batch_number,
+            purchase_price=:purchase_price, sale_price=:sale_price,
             quantity=:quantity, unit_type=:unit_type, weight=:weight, supplier_id=:supplier_id,
             sub_category=:sub_category, manufacturing_date=:manufacturing_date, expiry_date=:expiry_date,
             low_stock_threshold=:low_stock_threshold, image=:image,

@@ -18,7 +18,7 @@ class AddProductDialog(QDialog):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Add Product")
-        self.resize(480, 560)
+        self.resize(500, 650)
         self.image_path = ""
 
         main_layout = QVBoxLayout()
@@ -63,6 +63,14 @@ class AddProductDialog(QDialog):
         self.sale_price.setPrefix("Rs ")
         self.sale_price.setDecimals(2)
 
+        self.batch_input = QLineEdit()
+        self.batch_input.setPlaceholderText("Enter batch / lot number")
+
+        self.supplier_paid = QDoubleSpinBox()
+        self.supplier_paid.setRange(0, 1_000_000_000)
+        self.supplier_paid.setPrefix("Rs ")
+        self.supplier_paid.setDecimals(2)
+
         self.weight_input = QLineEdit()
         self.weight_input.setPlaceholderText("e.g. 500ml, 1kg")
 
@@ -94,9 +102,11 @@ class AddProductDialog(QDialog):
         form.addRow("Category:", self.category_combo)
         form.addRow("Sub-Category:", self.subcategory_combo)
         form.addRow("Formulation:", self.formulation_combo)
+        form.addRow("Batch Number:", self.batch_input)
         form.addRow("Supplier:", self.supplier_combo)
         form.addRow("Purchase Price:", self.purchase_price)
         form.addRow("Sale Price:", self.sale_price)
+        form.addRow("Paid to Supplier:", self.supplier_paid)
         form.addRow("Weight/Unit:", self.weight_input)
         form.addRow("Quantity:", self.quantity_input)
         form.addRow("Low Stock At:", self.low_stock_input)
@@ -171,6 +181,8 @@ class AddProductDialog(QDialog):
             "formulation":         self.formulation_combo.currentText(),
             "purchase_price":      self.purchase_price.value(),
             "sale_price":          self.sale_price.value(),
+            "batch_number":        self.batch_input.text().strip(),
+            "supplier_paid_amount": self.supplier_paid.value(),
             "quantity":            self.quantity_input.value(),
             "unit_type":           "",
             "weight":              self.weight_input.text(),
@@ -183,6 +195,16 @@ class AddProductDialog(QDialog):
         }
 
         try:
+            purchase_total = self.purchase_price.value() * self.quantity_input.value()
+            if not self.supplier_combo.currentData() and self.supplier_paid.value() > 0:
+                QMessageBox.warning(self, "Validation", "Select a supplier before recording a supplier payment.")
+                return
+            if self.supplier_paid.value() > purchase_total:
+                QMessageBox.warning(
+                    self, "Validation",
+                    "Paid-to-supplier amount cannot exceed purchase price × quantity."
+                )
+                return
             insert_product(data)
             QMessageBox.information(self, "Success", "Product added successfully.")
             self.accept()

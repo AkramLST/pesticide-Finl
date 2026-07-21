@@ -21,6 +21,8 @@ def _add_column_if_missing(conn, table: str, column: str, definition: str):
 def _upgrade_existing_tables(conn):
     """Add new columns to pre-existing tables from the old schema."""
     product_upgrades = [
+        ("batch_number",        "TEXT"),
+        ("supplier_paid_amount", "REAL NOT NULL DEFAULT 0"),
         ("purchase_price",      "REAL    NOT NULL DEFAULT 0"),
         ("sale_price",          "REAL    NOT NULL DEFAULT 0"),
         ("unit_type",           "TEXT"),
@@ -124,8 +126,10 @@ def run_migrations():
         category            TEXT,
         sub_category        TEXT,
         formulation         TEXT,
+        batch_number        TEXT,
         purchase_price      REAL    NOT NULL DEFAULT 0,
         sale_price          REAL    NOT NULL DEFAULT 0,
+        supplier_paid_amount REAL   NOT NULL DEFAULT 0,
         quantity            INTEGER NOT NULL DEFAULT 0,
         unit_type           TEXT,
         weight              TEXT,
@@ -213,6 +217,19 @@ def run_migrations():
         notes          TEXT,
         recorded_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
         created_at     TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS supplier_purchases (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        supplier_id    INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+        product_id     INTEGER REFERENCES products(id) ON DELETE SET NULL,
+        batch_number   TEXT,
+        quantity       INTEGER NOT NULL DEFAULT 0,
+        unit_cost      REAL    NOT NULL DEFAULT 0,
+        total_amount   REAL    NOT NULL DEFAULT 0,
+        amount_paid    REAL    NOT NULL DEFAULT 0,
+        purchase_date  TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+        notes          TEXT
     );
 
     CREATE TABLE IF NOT EXISTS invoices (

@@ -116,6 +116,9 @@ class ProductCard(QWidget):
         qty_lbl = QLabel(f"Qty: {qty}")
         qty_lbl.setStyleSheet(f"font-size:12px; color:{badge_color}; font-weight:600;")
 
+        batch_lbl = QLabel(f"Batch: {p.get('batch_number') or '—'}")
+        batch_lbl.setStyleSheet("font-size:11px; color:#64748b;")
+
         if expiry:
             if is_expired(expiry):
                 exp_lbl = QLabel(f"⚠ Expired: {expiry}")
@@ -134,6 +137,7 @@ class ProductCard(QWidget):
             info.addWidget(sub_cat)
         info.addWidget(price_lbl)
         info.addWidget(qty_lbl)
+        info.addWidget(batch_lbl)
         info.addStretch()
 
         root.addLayout(info)

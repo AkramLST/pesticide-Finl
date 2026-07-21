@@ -2,13 +2,16 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QLineEdit, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QMessageBox, QDialog,
-    QFormLayout, QTextEdit, QDoubleSpinBox
+    QFormLayout, QTextEdit, QDoubleSpinBox, QComboBox
 )
 from PySide6.QtCore import Qt
 from database.connection import get_connection
 from models.supplier_model import (
-    get_all_suppliers, insert_supplier, update_supplier, delete_supplier
+    get_all_suppliers, get_supplier_balance, insert_supplier, update_supplier, delete_supplier
 )
+from models.payment_model import record_supplier_payment
+from utils.config import PAYMENT_METHODS
+from utils.session import session
 from utils.helpers import format_datetime, format_currency
 
 _TABLE_STYLE = """
@@ -37,7 +40,10 @@ COL_PHONE = 2
 COL_EMAIL = 3
 COL_ADDR  = 4
 COL_PRODS = 5
-COL_UPD   = 6
+COL_PURCHASED = 6
+COL_PAID = 7
+COL_PENDING = 8
+COL_UPD   = 9
 
 
 def _product_count(supplier_id: int) -> int:
@@ -48,16 +54,6 @@ def _product_count(supplier_id: int) -> int:
     ).fetchone()
     conn.close()
     return row["cnt"] if row else 0
-
-
-def _supplier_payment_total(supplier_id: int) -> float:
-    conn = get_connection()
-    row = conn.execute(
-        "SELECT COALESCE(SUM(amount_paid), 0) AS total_paid FROM supplier_payments WHERE supplier_id=?",
-        (supplier_id,),
-    ).fetchone()
-    conn.close()
-    return float(row["total_paid"] or 0) if row else 0.0
 
 
 class SuppliersPage(QWidget):
@@ -128,9 +124,10 @@ class SuppliersPage(QWidget):
 
         # Table
         self.table = QTableWidget()
-        self.table.setColumnCount(7)
+        self.table.setColumnCount(10)
         self.table.setHorizontalHeaderLabels([
-            "ID", "Name", "Phone", "Email", "Address", "Products", "Last Updated"
+            "ID", "Name", "Phone", "Email", "Address", "Products",
+            "Purchased", "Paid", "Pending", "Last Updated"
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -140,6 +137,9 @@ class SuppliersPage(QWidget):
         self.table.setColumnWidth(COL_EMAIL, 180)
         self.table.setColumnWidth(COL_ADDR,  180)
         self.table.setColumnWidth(COL_PRODS, 80)
+        self.table.setColumnWidth(COL_PURCHASED, 110)
+        self.table.setColumnWidth(COL_PAID, 100)
+        self.table.setColumnWidth(COL_PENDING, 110)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -157,6 +157,7 @@ class SuppliersPage(QWidget):
 
         act_row = QHBoxLayout()
         for label, style, slot in [
+            ("Record Payment", _GREEN, self._record_payment),
             ("📦  View Products", "QPushButton{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;"
              "border-radius:8px;font-size:13px;font-weight:600;padding:0 14px;}"
              "QPushButton:hover{background:#dbeafe;}", self._view_products),
@@ -181,9 +182,8 @@ class SuppliersPage(QWidget):
             if item.widget():
                 item.widget().deleteLater()
         total_prods = sum(s.get("_prod_count", 0) for s in suppliers)
-        total_open = sum(float(s.get("opening_balance", 0) or 0) for s in suppliers)
-        total_paid = sum(float(s.get("_paid_total", 0) or 0) for s in suppliers)
-        total_pending = max(0.0, total_open - total_paid)
+        total_paid = sum(float(s.get("_balance", {}).get("total_paid", 0) or 0) for s in suppliers)
+        total_pending = sum(float(s.get("_balance", {}).get("outstanding", 0) or 0) for s in suppliers)
         for text, color in [
             (f"Total Suppliers: <b>{len(suppliers)}</b>", "#475569"),
             (f"📦 Products Supplied: <b>{total_prods}</b>", "#2e7d32"),
@@ -199,7 +199,7 @@ class SuppliersPage(QWidget):
         rows = get_all_suppliers()
         for s in rows:
             s["_prod_count"] = _product_count(s["id"])
-            s["_paid_total"] = _supplier_payment_total(s["id"])
+            s["_balance"] = get_supplier_balance(s["id"])
         self._all = rows
         self._filter()
 
@@ -224,6 +224,9 @@ class SuppliersPage(QWidget):
                 s.get("email","") or "—",
                 s.get("address","") or "—",
                 str(s.get("_prod_count", 0)),
+                format_currency((s.get("_balance") or {}).get("purchase_total", 0)),
+                format_currency((s.get("_balance") or {}).get("total_paid", 0)),
+                format_currency((s.get("_balance") or {}).get("outstanding", 0)),
                 format_datetime(s.get("updated_at","") or ""),
             ]
             for col, text in enumerate(cells):
@@ -247,6 +250,17 @@ class SuppliersPage(QWidget):
         s = self._selected()
         if s:
             SupplierProductsDialog(s).exec()
+
+    def _record_payment(self):
+        supplier = self._selected()
+        if not supplier:
+            return
+        outstanding = float((supplier.get("_balance") or {}).get("outstanding", 0) or 0)
+        if outstanding <= 0:
+            QMessageBox.information(self, "No Balance", "This supplier has no pending balance.")
+            return
+        if SupplierPaymentDialog(supplier, outstanding).exec():
+            self.load_data()
 
     def _add(self):
         if SupplierDialog().exec():
@@ -387,9 +401,9 @@ class SupplierProductsDialog(QDialog):
                     if p.get("supplier_id") == supplier["id"]]
 
         table = QTableWidget()
-        table.setColumnCount(6)
+        table.setColumnCount(8)
         table.setHorizontalHeaderLabels(
-            ["ID", "Name", "Category", "Qty", "Buy Price", "Sale Price"])
+            ["ID", "Name", "Batch", "Category", "Qty", "Buy Price", "Paid at Purchase", "Sale Price"])
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -402,9 +416,11 @@ class SupplierProductsDialog(QDialog):
             for col, val in enumerate([
                 str(p.get("id", "")),
                 p.get("name", ""),
+                p.get("batch_number", "") or "-",
                 p.get("category", ""),
                 str(p.get("quantity", 0)),
                 format_currency(p.get("purchase_price", 0)),
+                format_currency(p.get("supplier_paid_amount", 0)),
                 format_currency(p.get("sale_price", 0)),
             ]):
                 item = QTableWidgetItem(val)
@@ -418,3 +434,53 @@ class SupplierProductsDialog(QDialog):
         close.setStyleSheet(_GRAY)
         close.clicked.connect(self.accept)
         root.addWidget(close, alignment=Qt.AlignRight)
+
+
+class SupplierPaymentDialog(QDialog):
+
+    def __init__(self, supplier: dict, outstanding: float):
+        super().__init__()
+        self.supplier = supplier
+        self.setWindowTitle("Record Supplier Payment")
+        self.resize(420, 250)
+
+        root = QVBoxLayout(self)
+        root.addWidget(QLabel(
+            f"<b>{supplier['name']}</b><br>Outstanding: {format_currency(outstanding)}"
+        ))
+        form = QFormLayout()
+        self.amount = QDoubleSpinBox()
+        self.amount.setRange(0.01, outstanding)
+        self.amount.setValue(outstanding)
+        self.amount.setPrefix("Rs ")
+        self.amount.setDecimals(2)
+        self.method = QComboBox()
+        self.method.addItems(PAYMENT_METHODS)
+        self.notes = QLineEdit()
+        form.addRow("Amount:", self.amount)
+        form.addRow("Payment Method:", self.method)
+        form.addRow("Notes:", self.notes)
+        root.addLayout(form)
+
+        buttons = QHBoxLayout()
+        cancel = QPushButton("Cancel")
+        cancel.setStyleSheet(_GRAY)
+        cancel.clicked.connect(self.reject)
+        save = QPushButton("Confirm Payment")
+        save.setStyleSheet(_GREEN)
+        save.clicked.connect(self._save)
+        buttons.addWidget(cancel)
+        buttons.addStretch()
+        buttons.addWidget(save)
+        root.addLayout(buttons)
+
+    def _save(self):
+        try:
+            user_id = session.user.get("id") if session.user else None
+            record_supplier_payment(
+                self.supplier["id"], self.amount.value(),
+                self.method.currentText(), self.notes.text().strip(), user_id,
+            )
+            self.accept()
+        except Exception as exc:
+            QMessageBox.critical(self, "Payment Error", str(exc))

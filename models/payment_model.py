@@ -82,7 +82,7 @@ def _recalc_customer(conn, customer_id: int):
                 WHERE customer_id = ? AND is_deleted = 0
             ), 0) AS total_pending
         """,
-        (customer_id, customer_id),
+        (customer_id, customer_id, customer_id),
     ).fetchone()
     if not row:
         return None
@@ -262,18 +262,24 @@ def _recalc_supplier(conn, supplier_id: int):
         SELECT
             COALESCE((SELECT opening_balance FROM suppliers WHERE id = ?), 0) AS opening_balance,
             COALESCE((
+                SELECT SUM(total_amount - amount_paid)
+                FROM supplier_purchases
+                WHERE supplier_id = ?
+            ), 0) AS purchase_balance,
+            COALESCE((
                 SELECT SUM(amount_paid)
                 FROM supplier_payments
                 WHERE supplier_id = ?
             ), 0) AS total_paid
         """,
-        (supplier_id, supplier_id),
+        (supplier_id, supplier_id, supplier_id),
     ).fetchone()
     if not row:
         return None
     opening_balance = float(row["opening_balance"] or 0)
+    purchase_balance = float(row["purchase_balance"] or 0)
     total_paid = float(row["total_paid"] or 0)
-    pending = max(0.0, opening_balance - total_paid)
+    pending = max(0.0, opening_balance + purchase_balance - total_paid)
     conn.execute(
         """
         UPDATE suppliers
@@ -321,6 +327,8 @@ def get_supplier_payment_summary():
         """
         SELECT
             COALESCE(SUM(opening_balance), 0) AS opening_total,
+            COALESCE((SELECT SUM(total_amount) FROM supplier_purchases), 0) AS purchase_total,
+            COALESCE((SELECT SUM(amount_paid) FROM supplier_purchases), 0) AS purchase_paid_total,
             COALESCE((SELECT SUM(amount_paid) FROM supplier_payments), 0) AS paid_total
         FROM suppliers
         WHERE is_active = 1
@@ -329,7 +337,9 @@ def get_supplier_payment_summary():
     conn.close()
     opening_total = float(row["opening_total"] or 0) if row else 0.0
     paid_total = float(row["paid_total"] or 0) if row else 0.0
+    purchase_paid_total = float(row["purchase_paid_total"] or 0) if row else 0.0
+    purchase_total = float(row["purchase_total"] or 0) if row else 0.0
     return {
-        "total_paid": paid_total,
-        "total_pending": max(0.0, opening_total - paid_total),
+        "total_paid": paid_total + purchase_paid_total,
+        "total_pending": max(0.0, opening_total + purchase_total - paid_total - purchase_paid_total),
     }

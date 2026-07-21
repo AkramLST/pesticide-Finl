@@ -314,7 +314,15 @@ class SellProductDialog(QDialog):
         }]
 
         try:
-            sale_id = insert_sale(sale_data, items_data)
+            # The payment ledger is the source of truth. Start the database row
+            # unpaid, then record the initial payment below so it is not counted
+            # twice or capped against an already-reduced remaining balance.
+            db_sale_data = {
+                **sale_data,
+                "paid_amount": 0,
+                "remaining_amount": total,
+            }
+            sale_id = insert_sale(db_sale_data, items_data)
             deduct_stock(p["id"], qty)
             if paid > 0:
                 record_sale_payment(
