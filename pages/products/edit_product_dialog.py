@@ -181,9 +181,9 @@ class EditProductDialog(QDialog):
         widget = QDateEdit()
         widget.setCalendarPopup(True)
         widget.setDisplayFormat("yyyy-MM-dd")
-        widget.setDateRange(QDate(1900, 1, 1), QDate.currentDate().addYears(20))
+        widget.setDateRange(QDate(2026, 1, 1), QDate.currentDate().addYears(20))
         widget.setSpecialValueText("Select date")
-        widget.setDate(QDate(1900, 1, 1))
+        widget.setDate(QDate(2026, 1, 1))
         return widget
 
     @staticmethod
@@ -193,7 +193,7 @@ class EditProductDialog(QDialog):
             if d.isValid():
                 widget.setDate(d)
                 return
-        widget.setDate(QDate(1900, 1, 1))
+        widget.setDate(QDate(2026, 1, 1))
 
     def _load_brands(self):
         self.brand_combo.clear()
@@ -243,8 +243,8 @@ class EditProductDialog(QDialog):
             "unit_type":           self.product.get("unit_type", ""),
             "weight":              self.weight_input.text(),
             "supplier_id":         self.supplier_combo.currentData(),
-            "manufacturing_date":  None if self.mfg_input.date() == QDate(1900, 1, 1) else self.mfg_input.date().toString("yyyy-MM-dd"),
-            "expiry_date":         None if self.expiry_input.date() == QDate(1900, 1, 1) else self.expiry_input.date().toString("yyyy-MM-dd"),
+            "manufacturing_date":  None if self.mfg_input.date() == QDate(2026, 1, 1) else self.mfg_input.date().toString("yyyy-MM-dd"),
+            "expiry_date":         None if self.expiry_input.date() == QDate(2026, 1, 1) else self.expiry_input.date().toString("yyyy-MM-dd"),
             "low_stock_threshold": self.low_stock_input.value(),
             "secret_product":      1 if self.secret_checkbox.isChecked() else 0,
             "image":               self.image_path,

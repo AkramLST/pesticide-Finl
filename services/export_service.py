@@ -278,7 +278,7 @@ def export_sales_pdf(sales: list) -> str:
 # CUSTOMER STATEMENT PDF
 # ─────────────────────────────────────────────────────────────────────────────
 
-def export_customer_statement(customer: dict, sales: list) -> str:
+def export_customer_statement(customer: dict, sales: list, payments: list = None) -> str:
     os.makedirs(EXPORTS_DIR, exist_ok=True)
     ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
     name = customer.get("name", "customer").replace(" ", "_")
@@ -326,22 +326,58 @@ def export_customer_statement(customer: dict, sales: list) -> str:
     story.append(HRFlowable(width="100%", thickness=0.5,
                             color=colors.HexColor("#e2e8f0"), spaceAfter=8))
 
-    # Transactions table
-    hdrs = ["Invoice #", "Product", "Qty", "Total", "Paid", "Remaining", "Date"]
-    rows = [hdrs]
+    if payments is None:
+        from models.payment_model import get_customer_payments
+        payments = get_customer_payments(customer.get("id", 0))
+
+    # A single chronological ledger makes later payments visible alongside the
+    # purchases that created the debt.
+    activity = []
     for s in sales:
-        rem = s.get("remaining_amount", 0) or 0
+        activity.append({
+            "date": s.get("sale_date", "") or "",
+            "order": 0,
+            "id": s.get("id", 0),
+            "type": "Sale",
+            "reference": s.get("invoice_number", ""),
+            "details": f"{s.get('_product', '')} (Qty {s.get('_qty', '')})",
+            "debit": float(s.get("total_amount", 0) or 0),
+            "credit": 0.0,
+        })
+    for p in payments:
+        activity.append({
+            "date": p.get("payment_date", "") or "",
+            "order": 1,
+            "id": p.get("id", 0),
+            "type": "Payment",
+            "reference": p.get("invoice_number", "") or "Account payment",
+            "details": " - ".join(filter(None, [
+                p.get("payment_method", "") or "",
+                p.get("notes", "") or "",
+            ])) or "Payment received",
+            "debit": 0.0,
+            "credit": float(p.get("amount_paid", 0) or 0),
+        })
+    activity.sort(key=lambda entry: (entry["date"], entry["order"], entry["id"]))
+
+    hdrs = ["Date", "Type", "Reference", "Details", "Debit", "Credit", "Balance"]
+    rows = [hdrs]
+    balance = float(customer.get("opening_balance", 0) or 0)
+    if balance:
+        rows.append(["-", "Opening", "Opening balance", "", "", "", format_currency(balance)])
+    for entry in activity:
+        balance += entry["debit"] - entry["credit"]
         rows.append([
-            s.get("invoice_number",""),
-            s.get("_product",""),
-            str(s.get("_qty","")),
-            format_currency(s.get("total_amount",0) or 0),
-            format_currency(s.get("paid_amount",0) or 0),
-            format_currency(rem),
-            format_datetime(s.get("sale_date","") or ""),
+            format_datetime(entry["date"]),
+            entry["type"],
+            entry["reference"],
+            entry["details"],
+            format_currency(entry["debit"]) if entry["debit"] else "-",
+            format_currency(entry["credit"]) if entry["credit"] else "-",
+            format_currency(max(0.0, balance)),
         ])
 
-    col_w = [3*cm, 5*cm, 1.5*cm, 3*cm, 3*cm, 3*cm, 3.5*cm]
+    col_w = [3.1*cm, 1.7*cm, 2.7*cm, 4.2*cm, 2.2*cm, 2.2*cm, 2.4*cm]
     tbl = Table(rows, colWidths=col_w, repeatRows=1)
     tbl.setStyle(_pdf_table_style(len(hdrs)))
     story.append(tbl)
@@ -349,8 +385,8 @@ def export_customer_statement(customer: dict, sales: list) -> str:
 
     # Totals summary
     total_amt  = sum(s.get("total_amount",0) or 0 for s in sales)
-    total_paid = sum(s.get("paid_amount",0) or 0 for s in sales)
-    total_rem  = sum(s.get("remaining_amount",0) or 0 for s in sales)
+    total_paid = sum(p.get("amount_paid", 0) or 0 for p in payments)
+    total_rem  = max(0.0, float(customer.get("opening_balance", 0) or 0) + total_amt - total_paid)
 
     sum_data = [
         ["", "Total Invoiced:", format_currency(total_amt)],

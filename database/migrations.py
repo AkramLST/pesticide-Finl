@@ -267,12 +267,39 @@ def run_migrations():
     conn.commit()
 
     _upgrade_existing_tables(conn)
+    _backfill_and_reconcile_sale_payments(conn)
     _seed_users(conn)
     _seed_settings(conn)
     _seed_brands(conn)
 
     conn.close()
     log.info("Database migrations complete.")
+
+
+def _backfill_and_reconcile_sale_payments(conn):
+    """Preserve paid amounts from older sales and make sale balances authoritative."""
+    conn.execute("""
+        INSERT INTO payments
+            (sale_id, customer_id, amount_paid, payment_method, payment_date,
+             notes, remaining_balance, recorded_by, created_at)
+        SELECT s.id, s.customer_id, s.paid_amount, s.payment_method, s.sale_date,
+               'Initial payment (migrated)', s.remaining_amount, s.sold_by, s.created_at
+        FROM sales s
+        WHERE s.paid_amount > 0
+          AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.sale_id = s.id)
+    """)
+    conn.execute("""
+        UPDATE sales
+        SET paid_amount = COALESCE((
+                SELECT SUM(p.amount_paid) FROM payments p WHERE p.sale_id = sales.id
+            ), paid_amount),
+            remaining_amount = MAX(0, total_amount - COALESCE((
+                SELECT SUM(p.amount_paid) FROM payments p WHERE p.sale_id = sales.id
+            ), paid_amount)),
+            updated_at = datetime('now','localtime')
+        WHERE EXISTS (SELECT 1 FROM payments p WHERE p.sale_id = sales.id)
+    """)
+    conn.commit()
 
 
 def _seed_users(conn):

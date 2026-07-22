@@ -267,7 +267,8 @@ class CustomersPage(QWidget):
             return
         try:
             from services.export_service import export_customer_statement
-            path = export_customer_statement(c, sales)
+            payments = get_customer_payments(c["id"])
+            path = export_customer_statement(c, sales, payments)
             QMessageBox.information(self, "Statement Generated",
                 f"PDF saved to:\n{path}")
             os.startfile(path)
@@ -277,7 +278,6 @@ class CustomersPage(QWidget):
     @staticmethod
     def _sales_for(customer: dict) -> list:
         sales = [s for s in get_all_sales() if s.get("customer_id") == customer["id"]]
-        payments = get_customer_payments(customer["id"])
         for s in sales:
             items = get_sale_items(s["id"])
             s["_product"] = items[0]["product_name"] if items else "—"

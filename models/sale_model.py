@@ -7,7 +7,7 @@ def get_all_sales():
     rows = conn.execute("""
         SELECT s.*, c.name as customer_name, u.name as seller_name,
                COALESCE(pay.total_paid, s.paid_amount) AS paid_amount_calc,
-               COALESCE(pay.remaining_amount, s.remaining_amount) AS remaining_amount_calc,
+               s.remaining_amount AS remaining_amount_calc,
                COALESCE(pay.last_payment_date, s.created_at) AS last_payment_date
         FROM sales s
         LEFT JOIN customers c ON s.customer_id = c.id
@@ -15,7 +15,6 @@ def get_all_sales():
         LEFT JOIN (
             SELECT sale_id,
                    SUM(amount_paid) AS total_paid,
-                   MAX(remaining_balance) AS remaining_amount,
                    MAX(payment_date) AS last_payment_date
             FROM payments
             WHERE sale_id IS NOT NULL
@@ -44,14 +43,13 @@ def get_sale_by_id(sale_id: int):
         SELECT s.*, c.name as customer_name, c.phone as customer_phone,
                c.address as customer_address, u.name as seller_name,
                COALESCE(pay.total_paid, s.paid_amount) AS paid_amount_calc,
-               COALESCE(pay.remaining_amount, s.remaining_amount) AS remaining_amount_calc
+               s.remaining_amount AS remaining_amount_calc
         FROM sales s
         LEFT JOIN customers c ON s.customer_id = c.id
         LEFT JOIN users u ON s.sold_by = u.id
         LEFT JOIN (
             SELECT sale_id,
-                   SUM(amount_paid) AS total_paid,
-                   MAX(remaining_balance) AS remaining_amount
+                   SUM(amount_paid) AS total_paid
             FROM payments
             WHERE sale_id IS NOT NULL
             GROUP BY sale_id
@@ -128,14 +126,8 @@ def get_sales_summary():
         SELECT
             COUNT(*) as total_sales,
             COALESCE(SUM(total_amount), 0) as total_revenue,
-            COALESCE(SUM(COALESCE(pay.remaining_amount, s.remaining_amount)), 0) as total_pending
+            COALESCE(SUM(s.remaining_amount), 0) as total_pending
         FROM sales s
-        LEFT JOIN (
-            SELECT sale_id, MAX(remaining_balance) AS remaining_amount
-            FROM payments
-            WHERE sale_id IS NOT NULL
-            GROUP BY sale_id
-        ) pay ON pay.sale_id = s.id
         WHERE s.is_deleted=0
     """).fetchone()
     conn.close()
@@ -174,17 +166,11 @@ def get_pending_sales() -> list:
     conn = get_connection()
     rows = conn.execute("""
         SELECT s.id, s.invoice_number, c.name as customer_name,
-               COALESCE(pay.remaining_amount, s.remaining_amount) AS remaining_amount,
+               s.remaining_amount,
                s.sale_date
         FROM sales s
         LEFT JOIN customers c ON s.customer_id = c.id
-        LEFT JOIN (
-            SELECT sale_id, MAX(remaining_balance) AS remaining_amount
-            FROM payments
-            WHERE sale_id IS NOT NULL
-            GROUP BY sale_id
-        ) pay ON pay.sale_id = s.id
-        WHERE s.is_deleted=0 AND COALESCE(pay.remaining_amount, s.remaining_amount) > 0
+        WHERE s.is_deleted=0 AND s.remaining_amount > 0
         ORDER BY s.sale_date DESC
         LIMIT 10
     """).fetchall()
