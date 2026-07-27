@@ -149,13 +149,13 @@ class ReportsPage(QWidget):
             de.setCalendarPopup(True)
             de.setStyleSheet(_DE_STYLE)
             de.setFixedWidth(140)
-        self.s_method = QComboBox()
-        self.s_method.addItem("All Methods")
-        self.s_method.addItems(PAYMENT_METHODS)
-        self.s_method.setStyleSheet(
+        self.s_product = QComboBox()
+        self.s_product.addItem("All Products")
+        self._load_products_filter()
+        self.s_product.setStyleSheet(
             "QComboBox{border:1.5px solid #e2e8f0;border-radius:7px;"
             "padding:7px 10px;font-size:13px;background:white;}")
-        self.s_method.setFixedWidth(150)
+        self.s_product.setFixedWidth(180)
         gen_btn = QPushButton("▶  Generate")
         gen_btn.setStyleSheet(_GREEN)
         gen_btn.setFixedHeight(38)
@@ -173,8 +173,8 @@ class ReportsPage(QWidget):
         frow.addWidget(self.s_from)
         frow.addWidget(QLabel("To:", styleSheet="font-size:13px;"))
         frow.addWidget(self.s_to)
-        frow.addWidget(QLabel("Method:", styleSheet="font-size:13px;"))
-        frow.addWidget(self.s_method)
+        frow.addWidget(QLabel("Product:", styleSheet="font-size:13px;"))
+        frow.addWidget(self.s_product)
         frow.addStretch()
         frow.addWidget(gen_btn)
         frow.addWidget(xl_btn)
@@ -201,43 +201,74 @@ class ReportsPage(QWidget):
         w.setWidget(body)
         return w
 
+    def _load_products_filter(self):
+        try:
+            conn = get_connection()
+            rows = conn.execute("SELECT name FROM products WHERE is_active=1 ORDER BY name").fetchall()
+            conn.close()
+            for r in rows:
+                self.s_product.addItem(r["name"])
+        except Exception:
+            pass
+
     def _sales_query(self) -> list:
         d_from  = self.s_from.date().toString("yyyy-MM-dd")
         d_to    = self.s_to.date().toString("yyyy-MM-dd") + " 23:59:59"
-        method  = self.s_method.currentText()
+        prod_filter = self.s_product.currentText()
         conn = get_connection()
-        q = """
-            SELECT s.id, s.invoice_number,
-                   COALESCE(c.name,'Walk-in') AS customer_name,
-                   s.total_amount, s.paid_amount, s.remaining_amount,
-                   s.payment_method, s.sale_date,
-                   COALESCE(u.name, u.username, 'Unknown') AS seller_name,
-                   s.discount
-            FROM sales s
-            LEFT JOIN customers c ON s.customer_id = c.id
-            LEFT JOIN users u     ON s.sold_by = u.id
-            WHERE s.is_deleted=0
-              AND s.sale_date BETWEEN ? AND ?
-        """
-        params = [d_from, d_to]
-        if method != "All Methods":
-            q += " AND s.payment_method=?"
-            params.append(method)
-        q += " ORDER BY s.sale_date DESC"
-        rows = conn.execute(q, params).fetchall()
-        # attach first product name
-        result = []
-        for r in rows:
-            items = conn.execute(
-                "SELECT p.name, si.quantity FROM sale_items si "
-                "LEFT JOIN products p ON si.product_id=p.id "
-                "WHERE si.sale_id=?", (r["id"],)
-            ).fetchall()
-            prod = items[0]["name"] if items else "—"
-            qty  = sum(i["quantity"] for i in items)
-            result.append({**dict(r), "_product": prod, "_qty": qty})
-        conn.close()
-        return result
+
+        if prod_filter == "All Products":
+            q = """
+                SELECT s.id, s.invoice_number,
+                       COALESCE(c.name,'Walk-in') AS customer_name,
+                       s.total_amount, s.paid_amount, s.remaining_amount,
+                       s.payment_method, s.sale_date,
+                       COALESCE(u.name, u.username, 'Unknown') AS seller_name,
+                       s.discount
+                FROM sales s
+                LEFT JOIN customers c ON s.customer_id = c.id
+                LEFT JOIN users u     ON s.sold_by = u.id
+                WHERE s.is_deleted=0
+                  AND s.sale_date BETWEEN ? AND ?
+                ORDER BY s.sale_date DESC
+            """
+            rows = conn.execute(q, [d_from, d_to]).fetchall()
+            result = []
+            for r in rows:
+                items = conn.execute(
+                    "SELECT p.name, si.quantity FROM sale_items si "
+                    "LEFT JOIN products p ON si.product_id=p.id "
+                    "WHERE si.sale_id=?", (r["id"],)
+                ).fetchall()
+                prod = items[0]["name"] if items else "—"
+                qty  = sum(i["quantity"] for i in items)
+                result.append({**dict(r), "_product": prod, "_qty": qty})
+            conn.close()
+            return result
+        else:
+            q = """
+                SELECT s.id, s.invoice_number,
+                       COALESCE(c.name,'Walk-in') AS customer_name,
+                       si.subtotal AS total_amount,
+                       s.paid_amount, s.remaining_amount,
+                       s.payment_method, s.sale_date,
+                       COALESCE(u.name, u.username, 'Unknown') AS seller_name,
+                       s.discount,
+                       p.name AS _product,
+                       si.quantity AS _qty
+                FROM sale_items si
+                JOIN sales s ON si.sale_id = s.id
+                JOIN products p ON si.product_id = p.id
+                LEFT JOIN customers c ON s.customer_id = c.id
+                LEFT JOIN users u     ON s.sold_by = u.id
+                WHERE s.is_deleted=0
+                  AND p.name = ?
+                  AND s.sale_date BETWEEN ? AND ?
+                ORDER BY s.sale_date DESC
+            """
+            rows = conn.execute(q, [prod_filter, d_from, d_to]).fetchall()
+            conn.close()
+            return [dict(r) for r in rows]
 
     def _gen_sales(self):
         self._sales_data = self._sales_query()
@@ -246,7 +277,7 @@ class ReportsPage(QWidget):
              s["_qty"], format_currency(s["total_amount"]),
              format_currency(s["paid_amount"]),
              format_currency(s["remaining_amount"]),
-             s["payment_method"] or "—",
+             s.get("payment_method") or "—",
              format_datetime(s["sale_date"]),
              s["seller_name"]]
             for s in self._sales_data
@@ -256,11 +287,16 @@ class ReportsPage(QWidget):
               float(r[6].replace("Rs","").replace(",","").strip()) > 0
               else "#16a34a")
         total   = sum(s["total_amount"] for s in self._sales_data)
+        qty_sold = sum(s["_qty"] for s in self._sales_data)
         paid    = sum(s["paid_amount"]  for s in self._sales_data)
         pending = sum(s["remaining_amount"] for s in self._sales_data)
+        prod_filter = self.s_product.currentText()
+        label_prefix = f"<b>Product:</b> {prod_filter}" if prod_filter != "All Products" else "<b>All Products</b>"
         self._sales_summary.setText(
+            f"{label_prefix}  │  "
             f"<b>Records:</b> {len(self._sales_data)}  │  "
-            f"<b>Revenue:</b> {format_currency(total)}  │  "
+            f"<b>Units Sold:</b> {qty_sold}  │  "
+            f"<b>Total Sales:</b> {format_currency(total)}  │  "
             f"<b>Collected:</b> {format_currency(paid)}  │  "
             f"<b>Pending:</b> <span style='color:#dc2626'>"
             f"{format_currency(pending)}</span>")
@@ -299,7 +335,7 @@ class ReportsPage(QWidget):
         bl = QVBoxLayout(body)
         bl.setContentsMargins(24, 20, 24, 24); bl.setSpacing(18)
 
-        fcard, fl = _card("🔎  Filters")
+        fcard, fl = _card("🔎  Date Range")
         frow = QHBoxLayout()
         self.p_from = QDateEdit(QDate.currentDate().addDays(-30))
         self.p_to   = QDateEdit(QDate.currentDate())
@@ -308,22 +344,20 @@ class ReportsPage(QWidget):
             de.setFixedWidth(140)
         gen_btn = QPushButton("▶  Generate"); gen_btn.setStyleSheet(_GREEN)
         gen_btn.setFixedHeight(38); gen_btn.clicked.connect(self._gen_profit)
-        pdf_btn = QPushButton("📄  PDF"); pdf_btn.setStyleSheet(_AMBER)
-        pdf_btn.setFixedHeight(38); pdf_btn.clicked.connect(self._export_profit_pdf)
         frow.addWidget(QLabel("From:", styleSheet="font-size:13px;"))
         frow.addWidget(self.p_from)
         frow.addWidget(QLabel("To:", styleSheet="font-size:13px;"))
         frow.addWidget(self.p_to)
-        frow.addStretch(); frow.addWidget(gen_btn); frow.addWidget(pdf_btn)
+        frow.addStretch(); frow.addWidget(gen_btn)
         fl.addLayout(frow); bl.addWidget(fcard)
 
         self._profit_summary = QLabel("—")
         self._profit_summary.setStyleSheet("font-size:13px;color:#475569;padding:8px 0;")
         bl.addWidget(self._profit_summary)
 
-        tcard, tl = _card("💰  Profit by Product")
+        tcard, tl = _card("💰  Profitability Breakdown")
         self._profit_table = _table([
-            "Product", "Category", "Units Sold",
+            "Product", "Category", "Qty Sold",
             "Revenue", "Cost", "Gross Profit", "Margin %"
         ])
         self._profit_table.setMinimumHeight(350)
@@ -336,13 +370,15 @@ class ReportsPage(QWidget):
         d_to   = self.p_to.date().toString("yyyy-MM-dd") + " 23:59:59"
         conn = get_connection()
         rows = conn.execute("""
-            SELECT p.name, p.category,
-                   SUM(si.quantity) AS units_sold,
-                   SUM(si.subtotal) AS revenue,
-                   SUM(si.quantity * p.purchase_price) AS cost
+            SELECT p.name AS product_name,
+                   COALESCE(p.category, 'Uncategorized') AS category,
+                   SUM(si.quantity)                     AS qty_sold,
+                   SUM(si.subtotal)                     AS revenue,
+                   SUM(COALESCE(p.purchase_price,0) * si.quantity) AS cost,
+                   SUM(si.subtotal - (COALESCE(p.purchase_price,0) * si.quantity)) AS profit
             FROM sale_items si
-            JOIN products p ON si.product_id = p.id
-            JOIN sales s    ON si.sale_id = s.id
+            JOIN sales s ON si.sale_id = s.id
+            LEFT JOIN products p ON si.product_id = p.id
             WHERE s.is_deleted=0 AND s.sale_date BETWEEN ? AND ?
             GROUP BY p.id ORDER BY revenue DESC
         """, (d_from, d_to)).fetchall()
@@ -350,23 +386,24 @@ class ReportsPage(QWidget):
         self._profit_data = [dict(r) for r in rows]
 
         table_rows = []
-        total_rev = total_cost = 0.0
+        total_rev = total_cost = total_profit = 0
         for r in self._profit_data:
             rev  = r["revenue"] or 0
-            cost = r["cost"] or 0
-            gp   = rev - cost
-            margin = f"{(gp/rev*100):.1f}%" if rev else "—"
-            total_rev  += rev
-            total_cost += cost
+            cost = r["cost"]    or 0
+            prof = r["profit"]  or 0
+            margin = (prof / rev * 100) if rev else 0
+            total_rev += rev; total_cost += cost; total_profit += prof
             table_rows.append([
-                r["name"], r["category"] or "—", str(r["units_sold"]),
+                r["product_name"] or "—", r["category"],
+                str(r["qty_sold"]),
                 format_currency(rev), format_currency(cost),
-                format_currency(gp), margin
+                format_currency(prof), f"{margin:.1f}%"
             ])
 
-        _fill(self._profit_table, table_rows)
-        gross = total_rev - total_cost
-        color = "#16a34a" if gross >= 0 else "#dc2626"
+        _fill(self._profit_table, table_rows, color_col=5,
+              color_fn=lambda row: "#16a34a" if not row[5].startswith("-")
+              else "#dc2626")
+        tot_margin = (total_profit / total_rev * 100) if total_rev else 0
         self._profit_summary.setText(
             f"<b>Revenue:</b> {format_currency(total_rev)}  │  "
             f"<b>Cost:</b> {format_currency(total_cost)}  │  "
@@ -481,24 +518,23 @@ class ReportsPage(QWidget):
         w.setWidget(body); return w
 
     def _gen_dues(self):
-        conn = get_connection()
-        rows = conn.execute("""
-            SELECT id, name, phone, total_paid, total_pending, last_purchase_date
-            FROM customers WHERE is_active=1 AND total_pending > 0
-            ORDER BY total_pending DESC
-        """).fetchall()
-        conn.close()
-        self._dues_data = [dict(r) for r in rows]
+        from models.customer_model import get_all_customers
+        customers = get_all_customers()
+        self._dues_data = [
+            c for c in customers
+            if float(c.get("total_pending", 0) or 0) > 0
+        ]
+        self._dues_data.sort(key=lambda c: float(c.get("total_pending", 0) or 0), reverse=True)
         table_rows = [
-            [str(r["id"]), r["name"], r["phone"] or "—",
-             format_currency(r["total_paid"]),
-             format_currency(r["total_pending"]),
-             format_datetime(r["last_purchase_date"] or "")]
+            [str(r["id"]), r["name"], r.get("phone") or "—",
+             format_currency(r.get("total_paid", 0)),
+             format_currency(r.get("total_pending", 0)),
+             format_datetime(r.get("last_purchase_date", "") or "")]
             for r in self._dues_data
         ]
         _fill(self._dues_table, table_rows, color_col=4,
               color_fn=lambda _: "#dc2626")
-        total_due = sum(r["total_pending"] for r in self._dues_data)
+        total_due = sum(float(r.get("total_pending", 0) or 0) for r in self._dues_data)
         self._dues_summary.setText(
             f"<b>Customers with dues:</b> {len(self._dues_data)}  │  "
             f"<b>Total Outstanding:</b> "

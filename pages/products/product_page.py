@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton,
     QGridLayout, QScrollArea, QHBoxLayout, QLineEdit,
-    QFrame, QComboBox, QCheckBox, QMessageBox
+    QFrame, QComboBox, QCheckBox, QMessageBox, QDialog, QFormLayout
 )
 from PySide6.QtCore import Qt
 
@@ -172,13 +172,7 @@ class ProductPage(QWidget):
         self._update_stats_strip(filtered)
 
         if not filtered:
-            empty = QLabel("No products found.")
-            empty.setAlignment(Qt.AlignCenter)
-            empty.setStyleSheet("color:#94a3b8; font-size:16px; padding:40px;")
-            self.grid.addWidget(empty, 0, 0, 1, 4)
-            return
-
-        row = col = 0
+            row = col = 0
         for product in filtered:
             card = ProductCard(product, self.load_products)
             self.grid.addWidget(card, row, col)
@@ -192,35 +186,69 @@ class ProductPage(QWidget):
         if dialog.exec():
             self.load_products()
 
-    def _toggle_secret_products(self, state: int):
-        if state != Qt.Checked:
+    def _toggle_secret_products(self, state=None):
+        if not self.secret_toggle.isChecked():
             self._show_secret_products = False
+            self.secret_toggle.setText("Show Secret Products")
             self.load_products()
             return
-        if self._confirm_admin_password():
+        if self._confirm_secret_access():
             self._show_secret_products = True
+            self.secret_toggle.setText("Hide Secret Products")
             self.load_products()
             return
         self.secret_toggle.blockSignals(True)
         self.secret_toggle.setChecked(False)
+        self.secret_toggle.setText("Show Secret Products")
         self.secret_toggle.blockSignals(False)
 
-    def _confirm_admin_password(self) -> bool:
-        from PySide6.QtWidgets import QInputDialog
-
+    def _confirm_secret_access(self) -> bool:
         if not session.user:
             QMessageBox.warning(self, "Access Denied", "Please log in again.")
             return False
-        pwd, ok = QInputDialog.getText(
-            self,
-            "Administrator Password",
-            "Enter administrator password:",
-            QLineEdit.Password,
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Show Secret Products")
+        dialog.resize(340, 160)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(18, 16, 18, 16)
+        form = QFormLayout()
+        name_input = QLineEdit()
+        name_input.setPlaceholderText("Logged-in user name")
+        password_input = QLineEdit()
+        password_input.setPlaceholderText("Password")
+        password_input.setEchoMode(QLineEdit.Password)
+        form.addRow("User:", name_input)
+        form.addRow("Password:", password_input)
+        layout.addLayout(form)
+
+        buttons = QHBoxLayout()
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(dialog.reject)
+        confirm = QPushButton("Confirm")
+        confirm.clicked.connect(dialog.accept)
+        confirm.setStyleSheet(
+            "QPushButton{background:#2e7d32;color:white;border-radius:7px;"
+            "padding:8px 16px;font-weight:700;border:none;}"
+            "QPushButton:hover{background:#1b5e20;}"
         )
-        if not ok or not pwd:
+        buttons.addWidget(cancel)
+        buttons.addStretch()
+        buttons.addWidget(confirm)
+        layout.addLayout(buttons)
+
+        if dialog.exec() != QDialog.Accepted:
             return False
-        user = get_user_by_credentials(session.user.get("username", ""), pwd)
-        if not user or user.get("role") != "Admin":
-            QMessageBox.warning(self, "Access Denied", "Invalid administrator password.")
+        entered_name = name_input.text().strip().lower()
+        password = password_input.text()
+        current_name = (session.user.get("name") or "").strip().lower()
+        current_username = (session.user.get("username") or "").strip().lower()
+
+        if entered_name not in {current_name, current_username}:
+            QMessageBox.warning(self, "Access Denied", "User name does not match the logged-in user.")
+            return False
+        user = get_user_by_credentials(session.username, password)
+        if not user:
+            QMessageBox.warning(self, "Access Denied", "Invalid user name or password.")
             return False
         return True

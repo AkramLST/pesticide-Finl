@@ -49,7 +49,7 @@ COL_UPD   = 9
 def _product_count(supplier_id: int) -> int:
     conn = get_connection()
     row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM products WHERE supplier_id=? AND is_active=1",
+        "SELECT COALESCE(SUM(quantity), 0) as cnt FROM supplier_purchases WHERE supplier_id=?",
         (supplier_id,)
     ).fetchone()
     conn.close()
@@ -385,25 +385,31 @@ class SupplierProductsDialog(QDialog):
         self._build(supplier)
 
     def _build(self, supplier):
-        from models.product_model import get_all_products
+        from models.product_model import get_supplier_purchase_entries
         from utils.helpers import format_currency
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 14, 16, 14)
         root.setSpacing(10)
 
+        products = get_supplier_purchase_entries(supplier["id"])
+        total_purchased_qty = sum(int(p.get("quantity", 0) or 0) for p in products)
+        total_purchased_val = sum(float(p.get("total_amount", 0) or 0) for p in products)
+
         heading = QLabel(
-            f"<b>{supplier['name']}</b>  —  products supplied")
+            f"<b>{supplier['name']}</b> — Purchased Products History<br>"
+            f"<span style='font-size:12px;color:#475569;'>"
+            f"Total Purchased Units: <b>{total_purchased_qty}</b> | Total Value: <b>{format_currency(total_purchased_val)}</b>"
+            f"</span>"
+        )
         heading.setStyleSheet("font-size:15px;color:#0f172a;")
         root.addWidget(heading)
 
-        products = [p for p in get_all_products()
-                    if p.get("supplier_id") == supplier["id"]]
-
         table = QTableWidget()
-        table.setColumnCount(8)
+        table.setColumnCount(9)
         table.setHorizontalHeaderLabels(
-            ["ID", "Name", "Batch", "Category", "Qty", "Buy Price", "Paid at Purchase", "Sale Price"])
+            ["Entry", "Product", "Batch", "Category", "Purchased Qty",
+             "Unit Cost", "Total", "Paid", "Purchase Date"])
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -415,13 +421,14 @@ class SupplierProductsDialog(QDialog):
         for row, p in enumerate(products):
             for col, val in enumerate([
                 str(p.get("id", "")),
-                p.get("name", ""),
+                p.get("product_name", "") or "Deleted product",
                 p.get("batch_number", "") or "-",
-                p.get("category", ""),
+                p.get("category", "") or "-",
                 str(p.get("quantity", 0)),
-                format_currency(p.get("purchase_price", 0)),
-                format_currency(p.get("supplier_paid_amount", 0)),
-                format_currency(p.get("sale_price", 0)),
+                format_currency(p.get("unit_cost", 0)),
+                format_currency(p.get("total_amount", 0)),
+                format_currency(p.get("amount_paid", 0)),
+                format_datetime(p.get("purchase_date", "") or ""),
             ]):
                 item = QTableWidgetItem(val)
                 item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)

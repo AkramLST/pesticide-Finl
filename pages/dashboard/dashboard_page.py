@@ -230,9 +230,11 @@ class DashboardPage(QWidget):
             """
             SELECT
                 COALESCE(SUM(si.quantity), 0) AS total_sold_qty,
-                COALESCE(SUM(si.subtotal), 0) AS total_sold_value
+                COALESCE(SUM(si.subtotal), 0) AS total_sold_value,
+                COALESCE(SUM(si.subtotal - (COALESCE(p.purchase_price, 0) * si.quantity)), 0) AS total_profit
             FROM sale_items si
             JOIN sales s ON s.id = si.sale_id
+            LEFT JOIN products p ON p.id = si.product_id
             WHERE s.is_deleted = 0
             """
         )
@@ -346,8 +348,7 @@ class DashboardPage(QWidget):
             ("Units Available", str(stats["inventory"].get("total_quantity", 0)), "#10b981", "#f0fdf4", "#d1fae5"),
             ("Inventory Value", format_currency(stats["inventory"].get("inventory_value", 0)), "#f59e0b", "#fffbeb", "#fef3c7"),
             ("Products Sold", str(stats["sales"].get("total_sold_qty", 0)), "#8b5cf6", "#f5f3ff", "#ede9fe"),
-            ("Sales Value", format_currency(stats["sales"].get("total_sold_value", 0)), "#0ea5e9", "#ecfeff", "#cffafe"),
-            ("Revenue", format_currency(stats["sales"].get("total_revenue", 0)), "#f97316", "#fff7ed", "#ffedd5"),
+            ("Total Profit", format_currency(stats["sales"].get("total_profit", 0)), "#2e7d32", "#f0fdf4", "#d1fae5"),
             ("Customer Received", format_currency(stats["payments"].get("customer_received", 0) + stats["payments"].get("opening_received", 0)), "#14b8a6", "#f0fdfa", "#ccfbf1"),
             ("Customer Pending", format_currency(stats["sales"].get("total_pending", 0)), "#ef4444", "#fef2f2", "#fee2e2"),
             ("Supplier Pending", format_currency(self._supplier_pending_total(stats["suppliers_due"])), "#dc2626", "#fef2f2", "#fee2e2"),
@@ -410,6 +411,7 @@ class DashboardPage(QWidget):
         summary = QLabel(
             f"Inventory value {format_currency(stats['inventory'].get('inventory_value', 0))} "
             f"across {stats['inventory'].get('product_count', 0)} active products. "
+            f"Total Profit earned is {format_currency(stats['sales'].get('total_profit', 0))}. "
             f"Customer pending is {format_currency(stats['sales'].get('total_pending', 0))} "
             f"and supplier pending is {format_currency(self._supplier_pending_total(stats['suppliers_due']))}."
         )
