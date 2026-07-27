@@ -172,7 +172,13 @@ class ProductPage(QWidget):
         self._update_stats_strip(filtered)
 
         if not filtered:
-            row = col = 0
+            empty = QLabel("No products found.")
+            empty.setAlignment(Qt.AlignCenter)
+            empty.setStyleSheet("color:#94a3b8; font-size:16px; padding:40px;")
+            self.grid.addWidget(empty, 0, 0, 1, 4)
+            return
+
+        row = col = 0
         for product in filtered:
             card = ProductCard(product, self.load_products)
             self.grid.addWidget(card, row, col)
